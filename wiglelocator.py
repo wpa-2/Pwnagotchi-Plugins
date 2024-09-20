@@ -5,7 +5,7 @@ from pwnagotchi.plugins import Plugin
 
 
 class WigleLocator(Plugin):
-    __author__ = 'WPA-2'
+    __author__ = 'WPA2'
     __version__ = '1.0.0'
     __license__ = 'GPL3'
     __description__ = 'Fetches AP location data from WiGLE and saves it with handshake files'
