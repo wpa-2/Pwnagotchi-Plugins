@@ -6,7 +6,7 @@ import pwnagotchi.plugins as plugins
 
 class Discord(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = '2.0.0'
+    __version__ = '2.1.0'
     __license__ = 'GPL3'
     __description__ = 'Sends Pwnagotchi handshakes and session summaries to Discord.'
 
@@ -50,20 +50,27 @@ class Discord(plugins.Plugin):
         embed_data = [
             {
                 'title': 'New Handshake Captured!',
-                'description': f'Access Point: **{access_point["hostname"]}**\nClient Station: **{client_station["mac"]}**',
+                'description': (
+                    f"Access Point: **{access_point['hostname']}**\n"
+                    f"Client Station: **{client_station['mac']}**"
+                ),
                 'fields': [
                     {'name': 'Handshake File', 'value': filename, 'inline': False},
                 ]
             }
         ]
-        self.send_discord_notification(f"🤝 New handshake from {access_point['hostname']}", embed_data=embed_data)
+        self.send_discord_notification(
+            f"🤝 New handshake from {access_point['hostname']}",
+            embed_data=embed_data
+        )
 
     def on_internet_available(self, agent):
         if self.session_notified:
-            # Prevent duplicate notifications
             return
 
         last_session = agent.last_session
+        logging.info(f"Last session details: Handshakes: {last_session.handshakes}, Duration: {last_session.duration}, Epochs: {last_session.epochs}")
+
         if last_session.handshakes > 0:
             logging.info("Discord plugin: Internet available, sending session summary.")
             self.session_notified = True  # Prevent future notifications until reset
@@ -81,11 +88,11 @@ class Discord(plugins.Plugin):
                     'description': 'Here are the stats from the last session:',
                     'fields': [
                         {'name': 'Duration', 'value': last_session.duration, 'inline': True},
-                        {'name': 'Epochs', 'value': last_session.epochs, 'inline': True},
+                        {'name': 'Epochs', 'value': str(last_session.epochs), 'inline': True},
                         {'name': 'Average Reward', 'value': f"{last_session.avg_reward:.2f}", 'inline': True},
-                        {'name': 'Deauths', 'value': last_session.deauthed, 'inline': True},
-                        {'name': 'Associations', 'value': last_session.associated, 'inline': True},
-                        {'name': 'Handshakes', 'value': last_session.handshakes, 'inline': True},
+                        {'name': 'Deauths', 'value': str(last_session.deauthed), 'inline': True},
+                        {'name': 'Associations', 'value': str(last_session.associated), 'inline': True},
+                        {'name': 'Handshakes', 'value': str(last_session.handshakes), 'inline': True},
                     ],
                     'image': {'url': 'attachment://pwnagotchi.png'}
                 }
@@ -95,12 +102,16 @@ class Discord(plugins.Plugin):
             try:
                 with open(picture_path, 'rb') as image_file:
                     files = {'pwnagotchi.png': image_file}
-                    self.send_discord_notification("📊 Session Summary", embed_data=embed_data, files=files)
+                    self.send_discord_notification(
+                        "📊 Session Summary",
+                        embed_data=embed_data,
+                        files=files
+                    )
             except Exception as e:
                 logging.exception(f"Discord plugin: Error sending session summary: {str(e)}")
         else:
             logging.info("Discord plugin: No handshakes in last session; not sending summary.")
 
     def on_session_stop(self, agent, session):
-        # Reset session notification flag for the next session
+        logging.info("Session stopped. Resetting notification flag.")
         self.session_notified = False
