@@ -1,35 +1,30 @@
 import logging
 import requests
-import json
 import os
+import json
 import pwnagotchi
 import pwnagotchi.plugins as plugins
 
 class Discord(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = '2.2.0'
+    __version__ = '2.1.0'
     __license__ = 'GPL3'
-    __description__ = 'Sends Pwnagotchi handshakes and session summaries to Discord, with location data from WiGLE.'
+    __description__ = 'Sends Pwnagotchi handshakes and session summaries to Discord.'
 
     def __init__(self):
         self.webhook_url = None
+        self.api_key = None
         self.session_notified = False
-        self.api_key = None  # WiGLE API key
+        self.no_handshake_logged = False  # Track no handshake notifications
 
     def on_loaded(self):
         logging.info('Discord plugin loaded.')
         self.webhook_url = self.options.get('webhook_url', None)
         self.api_key = self.options.get('wigle_api_key', None)
-
         if not self.webhook_url:
             logging.error("Discord plugin: Webhook URL not provided in config.")
         else:
             logging.info("Discord plugin: Webhook URL set.")
-
-        if not self.api_key:
-            logging.error("Discord plugin: WiGLE API key not provided in config.")
-        else:
-            logging.info("Discord plugin: WiGLE API key set.")
 
     def send_discord_notification(self, content, embed_data=None, files=None):
         if not self.webhook_url:
@@ -54,26 +49,53 @@ class Discord(plugins.Plugin):
         except Exception as e:
             logging.exception(f"Discord plugin: Error sending notification: {str(e)}")
 
-    def on_handshake(self, agent, filename, access_point, client_station):
-        logging.info("Discord plugin: Handshake captured.")
-        
-        # Fetch the location
-        location = self._get_location_from_wigle(access_point["mac"])
-        location_link = f"https://www.google.com/maps/search/?api=1&query={location['lat']},{location['lon']}" if location else "Location not found."
+    def on_config_changed(self, config):
+        self.api_key = config.get('main', {}).get('plugins', {}).get('wiglelocator', {}).get('api_key', None)
+        if not self.api_key:
+            logging.error('[Discord] WiGLE API key not found in config.toml!')
 
-        embed_data = [
-            {
-                'title': 'New Handshake Captured!',
-                'description': (
-                    f"Access Point: **{access_point['hostname']}**\n"
-                    f"Client Station: **{client_station['mac']}**"
-                ),
-                'fields': [
-                    {'name': 'Handshake File', 'value': filename, 'inline': False},
-                    {'name': 'Location', 'value': f"Latitude: {location['lat']}, Longitude: {location['lon']}\n[View Location]({location_link})", 'inline': False},
-                ]
-            }
-        ]
+    def on_handshake(self, agent, filename, access_point, client_station):
+        logging.info(f"[Discord] Handshake event captured. Access Point: {access_point['hostname']}, Client Station: {client_station['mac']}")
+        
+        bssid = access_point["mac"]
+        essid = access_point["hostname"]
+
+        # Fetch the AP location from WiGLE
+        location = self._get_location_from_wigle(bssid)
+
+        if location:
+            location_link = f"https://www.google.com/maps?q={location['lat']},{location['lon']}"
+            embed_data = [
+                {
+                    'title': 'New Handshake Captured!',
+                    'description': (
+                        f'Access Point: **{access_point["hostname"]}**\n'
+                        f'Client Station: **{client_station["mac"]}**\n'
+                        f'Location:\n'
+                        f'Latitude: {location["lat"]}, Longitude: {location["lon"]}\n'
+                        f'[View Location]({location_link})'
+                    ),
+                    'fields': [
+                        {'name': 'Handshake File', 'value': filename, 'inline': False},
+                    ]
+                }
+            ]
+        else:
+            logging.warning(f'[Discord] No location found for BSSID: {bssid}. Sending notification without location.')
+            embed_data = [
+                {
+                    'title': 'New Handshake Captured!',
+                    'description': (
+                        f'Access Point: **{access_point["hostname"]}**\n'
+                        f'Client Station: **{client_station["mac"]}**\n'
+                        'Location: Not available\n'
+                    ),
+                    'fields': [
+                        {'name': 'Handshake File', 'value': filename, 'inline': False},
+                    ]
+                }
+            ]
+
         self.send_discord_notification(
             f"🤝 New handshake from {access_point['hostname']}",
             embed_data=embed_data
@@ -88,44 +110,28 @@ class Discord(plugins.Plugin):
         }
 
         response = requests.get('https://api.wigle.net/api/v2/network/detail', headers=headers, params=params)
-        logging.info(f"[Discord plugin] WiGLE API request for BSSID {bssid}, response code: {response.status_code}")
+        logging.info(f"[Discord] WiGLE API request for BSSID {bssid}, response code: {response.status_code}")
 
         if response.status_code == 200:
             data = response.json()
             if data['success'] and data['results']:
                 result = data['results'][0]
-                trilat = result.get('trilat', 'N/A')
-                trilong = result.get('trilong', 'N/A')
-                logging.info(f"[Discord plugin] WiGLE API result: Lat={trilat}, Long={trilong}")
-
                 return {
-                    'lat': trilat,
-                    'lon': trilong
+                    'lat': result.get('trilat', 'N/A'),
+                    'lon': result.get('trilong', 'N/A')
                 }
             else:
-                logging.warning(f'[Discord plugin] No location data found for BSSID: {bssid}')
+                logging.warning(f'[Discord] No location data found for BSSID: {bssid}')
         else:
-            logging.error(f'[Discord plugin] Error fetching WiGLE data: {response.status_code}')
+            logging.error(f'[Discord] Error fetching WiGLE data: {response.status_code}')
         return None
 
     def on_internet_available(self, agent):
-        if self.session_notified:
-            return
-
         last_session = agent.last_session
-        logging.info(f"Last session details: Handshakes: {last_session.handshakes}, Duration: {last_session.duration}, Epochs: {last_session.epochs}")
-
-        if last_session.handshakes > 0:
+        if last_session.handshakes > 0 and not self.session_notified:
             logging.info("Discord plugin: Internet available, sending session summary.")
-            self.session_notified = True  # Prevent future notifications until reset
+            self.session_notified = True
 
-            # Capture display image
-            display = agent.view()
-            picture_path = '/root/pwnagotchi.png'
-            display.update(force=True)
-            display.image().save(picture_path, 'png')
-
-            # Prepare session summary
             embed_data = [
                 {
                     'title': 'Pwnagotchi Session Summary',
@@ -137,25 +143,13 @@ class Discord(plugins.Plugin):
                         {'name': 'Deauths', 'value': str(last_session.deauthed), 'inline': True},
                         {'name': 'Associations', 'value': str(last_session.associated), 'inline': True},
                         {'name': 'Handshakes', 'value': str(last_session.handshakes), 'inline': True},
-                    ],
-                    'image': {'url': 'attachment://pwnagotchi.png'}
+                    ]
                 }
             ]
 
-            # Send session summary with screenshot
-            try:
-                with open(picture_path, 'rb') as image_file:
-                    files = {'pwnagotchi.png': image_file}
-                    self.send_discord_notification(
-                        "📊 Session Summary",
-                        embed_data=embed_data,
-                        files=files
-                    )
-            except Exception as e:
-                logging.exception(f"Discord plugin: Error sending session summary: {str(e)}")
-        else:
-            logging.info("Discord plugin: No handshakes in last session; not sending summary.")
+            self.send_discord_notification("📊 Session Summary", embed_data=embed_data)
 
     def on_session_stop(self, agent, session):
         logging.info("Session stopped. Resetting notification flags.")
         self.session_notified = False
+        self.no_handshake_logged = False  # Reset for next session
