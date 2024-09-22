@@ -13,6 +13,8 @@ class Discord(plugins.Plugin):
     def __init__(self):
         self.webhook_url = None
         self.session_notified = False
+        self.no_handshake_logged = False
+        self.session_details_logged = False  # New flag for session details logging
 
     def on_loaded(self):
         logging.info('Discord plugin loaded.')
@@ -63,13 +65,13 @@ class Discord(plugins.Plugin):
             f"🤝 New handshake from {access_point['hostname']}",
             embed_data=embed_data
         )
+        self.no_handshake_logged = False  # Reset the flag when a handshake is captured
 
     def on_internet_available(self, agent):
         if self.session_notified:
             return
 
         last_session = agent.last_session
-        logging.info(f"Last session details: Handshakes: {last_session.handshakes}, Duration: {last_session.duration}, Epochs: {last_session.epochs}")
 
         if last_session.handshakes > 0:
             logging.info("Discord plugin: Internet available, sending session summary.")
@@ -110,8 +112,17 @@ class Discord(plugins.Plugin):
             except Exception as e:
                 logging.exception(f"Discord plugin: Error sending session summary: {str(e)}")
         else:
-            logging.info("Discord plugin: No handshakes in last session; not sending summary.")
+            if not self.no_handshake_logged:  # Log this message only once
+                logging.info("Discord plugin: No handshakes in last session; not sending summary.")
+                self.no_handshake_logged = True  # Set the flag to prevent further logs
+
+        # Only log session details once when there's no handshake
+        if not self.session_details_logged:
+            logging.info(f"Last session details: Handshakes: {last_session.handshakes}, Duration: {last_session.duration}, Epochs: {last_session.epochs}")
+            self.session_details_logged = True  # Set the flag after logging
 
     def on_session_stop(self, agent, session):
-        logging.info("Session stopped. Resetting notification flag.")
+        logging.info("Session stopped. Resetting notification flags.")
         self.session_notified = False
+        self.no_handshake_logged = False  # Reset the flag for the next session
+        self.session_details_logged = False  # Reset for the next session
