@@ -11,7 +11,7 @@ class WigleLocator(Plugin):
     __description__ = 'Fetches AP location data from WiGLE and saves it with handshake files'
 
     def __init__(self):
-        self.api_key = None  # API key will be set from config.toml
+        self.api_key = None  # API key will be set in config.toml
 
     def on_loaded(self):
         logging.info(f"[WigleLocator] plugin fully loaded with configuration: {self.options}")
