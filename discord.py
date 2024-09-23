@@ -159,3 +159,4 @@ class Discord(plugins.Plugin):
     def on_session_stop(self, agent, session):
         logging.info("Session stopped. Resetting notification flags.")
         self.session_notified = False
+
