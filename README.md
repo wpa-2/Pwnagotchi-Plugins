@@ -18,7 +18,7 @@ main.plugins.webssh.username = "changeme"
 main.plugins.webssh.password = "changeme"
 main.plugins.webssh.port = 8082
 ```
-You will need to run 
+You will need to run these for webssh to work
 ```
 sudo apt update
 sudo apt install python3-flask
