@@ -12,6 +12,7 @@ main.plugins.discord.webhook_url = "YOUR_DISCORD_CHANNEL_WEB_HOOK_URL"
 main.plugins.discord.wigle_api_key = "ENCODED FOR USE API KEY "
 ``` 
 
+http://<pwnagotchi-ip>:8082
 ```
 main.plugins.webssh.enabled = true
 main.plugins.webssh.username = "changeme"
