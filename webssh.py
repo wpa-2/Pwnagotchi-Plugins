@@ -6,7 +6,7 @@ from functools import wraps
 
 class WebSSHPlugin(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.0'
+    __version__ = '0.1.0'
     __license__ = 'GPL3'
     __description__ = 'A Plugin to issue SSH commands via a browser'
 
