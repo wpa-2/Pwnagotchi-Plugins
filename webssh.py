@@ -4,7 +4,7 @@ from flask import Flask, request, render_template_string, Response
 import pwnagotchi.plugins as plugins
 from functools import wraps
 
-class websshPlugin(plugins.Plugin):
+class webssh(plugins.Plugin):
     __author__ = 'WPA2'
     __version__ = '0.1.0'
     __license__ = 'GPL3'
