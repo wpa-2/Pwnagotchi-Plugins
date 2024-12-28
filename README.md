@@ -14,10 +14,10 @@ main.plugins.discord.wigle_api_key = "ENCODED FOR USE API KEY "
 
 ```http://<pwnagotchi-ip>:8082```
 ```
-main.plugins.webssh.enabled = true
-main.plugins.webssh.username = "changeme"
-main.plugins.webssh.password = "changeme"
-main.plugins.webssh.port = 8082
+main.plugins.web2ssh.enabled = true
+main.plugins.web2ssh.username = "changeme"
+main.plugins.web2ssh.password = "changeme"
+main.plugins.web2ssh.port = 8082
 ```
 You will need to run these for webssh to work
 ```
