@@ -4,7 +4,7 @@ from flask import Flask, request, render_template_string, Response
 import pwnagotchi.plugins as plugins
 from functools import wraps
 
-class WebSSHPlugin(plugins.Plugin):
+class websshPlugin(plugins.Plugin):
     __author__ = 'WPA2'
     __version__ = '0.1.0'
     __license__ = 'GPL3'
@@ -12,14 +12,14 @@ class WebSSHPlugin(plugins.Plugin):
 
     def __init__(self, config=None):
         super().__init__()
-        logging.debug("WebSSHPlugin created")
+        logging.debug("websshPlugin created")
         self.app = Flask(__name__)
         self.config = config or {}
         self.options = {}
 
     def on_loaded(self):
         """Called when the plugin is loaded."""
-        logging.info("WebSSHPlugin loaded")
+        logging.info("websshPlugin loaded")
 
         # Initialize self.options with default values
         self.options = {
@@ -28,7 +28,7 @@ class WebSSHPlugin(plugins.Plugin):
             "port": self.config.get("main.plugins.webssh.port", 8082),
         }
 
-        logging.debug(f"WebSSHPlugin config: {self.options}")
+        logging.debug(f"websshPlugin config: {self.options}")
 
         # Set up Flask routes and start the server
         self.app.before_request(self.requires_auth)  # Attach auth check to all routes
@@ -247,9 +247,9 @@ class WebSSHPlugin(plugins.Plugin):
             'Unauthorized access. Please provide valid credentials.',
             status=401
         )
-        response.headers['WWW-Authenticate'] = 'Basic realm="WebSSH"'
+        response.headers['WWW-Authenticate'] = 'Basic realm="webssh"'
         return response
 
     def on_unload(self, ui):
         """Called when the plugin is unloaded."""
-        logging.info("WebSSHPlugin unloaded")
+        logging.info("websshPlugin unloaded")
