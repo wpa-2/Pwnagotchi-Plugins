@@ -209,7 +209,7 @@ class web2ssh(plugins.Plugin):
                     </div>
                 </body>
                 </html>
-            "", output=output)
+            """, output=output)
 
     def ssh_execute_command(self, command):
         """Executes the SSH command on the local device."""
