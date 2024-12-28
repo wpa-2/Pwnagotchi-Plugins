@@ -12,14 +12,14 @@ class webssh(plugins.Plugin):
 
     def __init__(self, config=None):
         super().__init__()
-        logging.debug("websshPlugin created")
+        logging.debug("webssh created")
         self.app = Flask(__name__)
         self.config = config or {}
         self.options = {}
 
     def on_loaded(self):
         """Called when the plugin is loaded."""
-        logging.info("websshPlugin loaded")
+        logging.info("webssh loaded")
 
         # Initialize self.options with default values
         self.options = {
@@ -28,7 +28,7 @@ class webssh(plugins.Plugin):
             "port": self.config.get("main.plugins.webssh.port", 8082),
         }
 
-        logging.debug(f"websshPlugin config: {self.options}")
+        logging.debug(f"webssh config: {self.options}")
 
         # Set up Flask routes and start the server
         self.app.before_request(self.requires_auth)  # Attach auth check to all routes
@@ -252,4 +252,4 @@ class webssh(plugins.Plugin):
 
     def on_unload(self, ui):
         """Called when the plugin is unloaded."""
-        logging.info("websshPlugin unloaded")
+        logging.info("webssh unloaded")
