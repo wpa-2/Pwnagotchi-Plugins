@@ -4,7 +4,7 @@ from flask import Flask, request, render_template_string, Response
 import pwnagotchi.plugins as plugins
 from functools import wraps
 
-class webssh(plugins.Plugin):
+class web2ssh(plugins.Plugin):
     __author__ = 'WPA2'
     __version__ = '0.1.0'
     __license__ = 'GPL3'
@@ -12,23 +12,23 @@ class webssh(plugins.Plugin):
 
     def __init__(self, config=None):
         super().__init__()
-        logging.debug("webssh created")
+        logging.debug("web2ssh created")
         self.app = Flask(__name__)
         self.config = config or {}
         self.options = {}
 
     def on_loaded(self):
         """Called when the plugin is loaded."""
-        logging.info("webssh loaded")
+        logging.info("web2ssh loaded")
 
         # Initialize self.options with default values
         self.options = {
-            "username": self.config.get("main.plugins.webssh.username", "changeme"),
-            "password": self.config.get("main.plugins.webssh.password", "changeme"),
-            "port": self.config.get("main.plugins.webssh.port", 8082),
+            "username": self.config.get("main.plugins.web2ssh.username", "changeme"),
+            "password": self.config.get("main.plugins.web2ssh.password", "changeme"),
+            "port": self.config.get("main.plugins.web2ssh.port", 8082),
         }
 
-        logging.debug(f"webssh config: {self.options}")
+        logging.debug(f"web2ssh config: {self.options}")
 
         # Set up Flask routes and start the server
         self.app.before_request(self.requires_auth)  # Attach auth check to all routes
@@ -45,7 +45,7 @@ class webssh(plugins.Plugin):
                 <html lang="en">
                 <head>
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>WEB-SSH Command Executor</title>
+                    <title>WEB2SSH Command Executor</title>
                     <style>
                         body {
                             font-family: Arial, sans-serif;
@@ -114,7 +114,7 @@ class webssh(plugins.Plugin):
                 </head>
                 <body>
                     <div class="container">
-                        <h1>WEB-SSH Command Executor</h1>
+                        <h1>WEB2SSH Command Executor</h1>
                         <form action="/execute" method="post">
                             <input type="text" id="commandInput" name="command" placeholder="Enter command" required>
                             <input type="submit" value="Execute">
@@ -209,7 +209,7 @@ class webssh(plugins.Plugin):
                     </div>
                 </body>
                 </html>
-            """, output=output)
+            "", output=output)
 
     def ssh_execute_command(self, command):
         """Executes the SSH command on the local device."""
@@ -247,9 +247,9 @@ class webssh(plugins.Plugin):
             'Unauthorized access. Please provide valid credentials.',
             status=401
         )
-        response.headers['WWW-Authenticate'] = 'Basic realm="webssh"'
+        response.headers['WWW-Authenticate'] = 'Basic realm="web2ssh"'
         return response
 
     def on_unload(self, ui):
         """Called when the plugin is unloaded."""
-        logging.info("webssh unloaded")
+        logging.info("web2ssh unloaded")
