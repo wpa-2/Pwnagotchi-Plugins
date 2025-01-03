@@ -155,7 +155,8 @@ class Discord(plugins.Plugin):
                 logging.exception(f"Discord plugin: Error sending session summary: {str(e)}")
         else:
             logging.info("Discord plugin: No handshakes in last session; not sending summary.")
-
+            self.session_notified = True  # Prevent repeated logging
+            
     def on_session_stop(self, agent, session):
         logging.info("Session stopped. Resetting notification flags.")
         self.session_notified = False
