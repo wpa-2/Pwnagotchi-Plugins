@@ -7,7 +7,7 @@ import pwnagotchi.plugins as plugins
 
 class Discord(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = '2.2.0'
+    __version__ = '2.2.1'
     __license__ = 'GPL3'
     __description__ = 'Sends Pwnagotchi handshakes and session summaries to Discord, with location data from WiGLE.'
 
