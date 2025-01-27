@@ -24,7 +24,7 @@ class Discord(plugins.Plugin):
     """
 
     __author__ = "WPA2"
-    __version__ = '2.2.2'
+    __version__ = '2.2.5'
     __license__ = 'GPL3'
     __description__ = 'Sends Pwnagotchi handshakes and session summaries to Discord, with location data from WiGLE.'
 
