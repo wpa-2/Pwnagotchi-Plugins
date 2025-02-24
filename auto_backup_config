@@ -1,3 +1,4 @@
+```
 main.plugins.auto_backup.enabled = true
 main.plugins.auto_backup.interval = "daily"    # or "hourly", or a number (minutes)
 main.plugins.auto_backup.max_tries = 0
@@ -18,3 +19,10 @@ main.plugins.auto_backup.files = [
   "/home/pi/.profile",
   "/home/pi/.wpa_sec_uploads",
 ]
+```
+
+
+To restore afetr flashing 
+```sudo tar xf /home/pi/NAME-backup.tar -C /```
+
+
