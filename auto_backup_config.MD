@@ -23,6 +23,8 @@ main.plugins.auto_backup.files = [
 
 
 To restore afetr flashing 
-```sudo tar xf /home/pi/NAME-backup.tar -C /```
+```
+sudo tar xf /home/pi/NAME-backup.tar -C /
+```
 
 
