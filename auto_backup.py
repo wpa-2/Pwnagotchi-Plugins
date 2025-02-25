@@ -8,7 +8,7 @@ import socket
 
 class AutoBackup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.1.1'
+    __version__ = '1.1.2'
     __license__ = 'GPL3'
     __description__ = 'Backs up files when internet is available, using new file list and options.'
 
