@@ -8,9 +8,9 @@ import socket
 
 class AutoBackup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.1.2'
+    __version__ = '1.1.3'
     __license__ = 'GPL3'
-    __description__ = 'Backs up files when internet is available, using new file list and options, with support for excludes.'
+    __description__ = 'Backs up files when internet is available, with support for excludes.'
 
     def __init__(self):
         self.ready = False
@@ -29,12 +29,9 @@ class AutoBackup(plugins.Plugin):
                 return
 
         # If no custom command(s) are provided, use the default plain tar command.
-        # Note the {excludes} placeholder for any exclude options.
+        # The command includes a placeholder for {excludes} so that if no excludes are set, it will be empty.
         if 'commands' not in self.options or not self.options['commands']:
             self.options['commands'] = ["tar cf {backup_file} {excludes} {files}"]
-            # For a tar.gz archive, use:
-            # self.options['commands'] = ["tar czf {backup_file} {excludes} {files}"]
-
         self.ready = True
         logging.info("AUTO-BACKUP: Successfully loaded.")
 
@@ -103,10 +100,11 @@ class AutoBackup(plugins.Plugin):
         files_to_backup = " ".join(existing_files)
 
         # Build excludes string if configured.
+        # Use get() so that if 'exclude' is missing or empty, we default to an empty list.
         excludes = ""
-        if 'exclude' in self.options and self.options['exclude']:
-            # self.options['exclude'] should be a list of patterns.
-            for pattern in self.options['exclude']:
+        exclude_list = self.options.get('exclude', [])
+        if exclude_list:
+            for pattern in exclude_list:
                 excludes += f" --exclude='{pattern}'"
 
         # Get the backup location from config.
