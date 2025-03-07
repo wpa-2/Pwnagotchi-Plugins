@@ -34,6 +34,7 @@ os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
 # ----------------------------------------------------------------------------
 logger = logging.getLogger("pwnagotchi.plugins.discord")
 logger.setLevel(logging.DEBUG)
+logger.propagate = False  # Prevent messages from propagating to the root logger
 
 file_handler = logging.FileHandler(LOG_FILE)
 file_handler.setLevel(logging.DEBUG)
@@ -200,32 +201,32 @@ class Discord(plugins.Plugin):
                 params=params,
                 timeout=10
             )
-            logger.debug(f"[Discord plugin] WiGLE API request for {normalized_bssid}, "
-                         f"response code: {response.status_code}")
+            logger.debug(f"[Discord plugin] WiGLE API request for {normalized_bssid}, response code: {response.status_code}")
 
             if response.status_code == 429:
                 retry_after = response.json().get('retry_after', 10)
-                logger.warning(
-                    f"[Discord plugin] WiGLE rate-limited the request. Retrying after {retry_after} seconds."
-                )
+                logger.warning(f"[Discord plugin] WiGLE rate-limited the request. Retrying after {retry_after} seconds.")
                 time.sleep(retry_after)
                 # Recursively retry once (mind infinite loops in real usage)
                 return self._get_location_from_wigle(bssid)
 
             if response.status_code == 200:
                 data = response.json()
-                logger.debug(f"[Discord plugin] WiGLE response data: {data}")
+                # Log a summary of the response rather than the full data dump
+                results = data.get('results')
+                results_count = len(results) if results else 0
+                logger.debug(f"[Discord plugin] WiGLE response success={data.get('success')}, results count={results_count}")
 
-                if data.get('success') and data.get('results'):
-                    result = data['results'][0]
+                if data.get('success') and results:
+                    result = results[0]
                     location = {
                         'lat': result.get('trilat', 'N/A'),
                         'lon': result.get('trilong', 'N/A')
                     }
+                    logger.debug(f"[Discord plugin] Found location for {normalized_bssid}: {location}")
+
                     self.wigle_cache[normalized_bssid] = location
-                    logger.debug(
-                        f"[Discord plugin] Caching location for {normalized_bssid}: {location}"
-                    )
+                    logger.debug(f"[Discord plugin] Caching location for {normalized_bssid}: {location}")
 
                     # Save updated cache to disk immediately
                     self._save_wigle_cache()
@@ -233,16 +234,13 @@ class Discord(plugins.Plugin):
                     return location
                 else:
                     logger.warning(
-                        f'[Discord plugin] No location data found for {normalized_bssid}. '
-                        f"Response success={data.get('success')}, results={data.get('results')}"
+                        f"[Discord plugin] No location data found for {normalized_bssid}. "
+                        f"Response success={data.get('success')}, results={results}"
                     )
             else:
-                logger.error(
-                    f"[Discord plugin] WiGLE lookup failed for {normalized_bssid}. "
-                    f"HTTP {response.status_code}, text: {response.text}"
-                )
+                logger.error(f"[Discord plugin] WiGLE lookup failed for {normalized_bssid}. HTTP {response.status_code}, text: {response.text}")
         except RequestException as e:
-            logger.error(f'[Discord plugin] Network error fetching WiGLE data for {normalized_bssid}: {e}')
+            logger.error(f"[Discord plugin] Network error fetching WiGLE data for {normalized_bssid}: {e}")
 
         return None
 
@@ -264,10 +262,7 @@ class Discord(plugins.Plugin):
         handshake_key = (filename, bssid.lower(), client_mac.lower())
 
         if handshake_key in self.recent_handshakes:
-            logger.warning(
-                f"Discord plugin: Duplicate handshake event detected for {handshake_key}. "
-                f"Skipping second notification."
-            )
+            logger.warning(f"Discord plugin: Duplicate handshake event detected for {handshake_key}. Skipping second notification.")
             return
         else:
             self.recent_handshakes.add(handshake_key)
@@ -317,8 +312,6 @@ class Discord(plugins.Plugin):
         logger.info("Discord plugin: Session stopped. Resetting notification flags and handshake cache.")
         self.session_notified = False
         self.recent_handshakes.clear()
-
-        # Optionally save the cache again
         self._save_wigle_cache()
 
     # ------------------------------------------------------------------------
@@ -329,26 +322,16 @@ class Discord(plugins.Plugin):
             try:
                 with open(CACHE_FILE, "r") as f:
                     self.wigle_cache = json.load(f)
-                logger.info(
-                    f"Discord plugin: Loaded WiGLE cache from {CACHE_FILE}, "
-                    f"{len(self.wigle_cache)} entries."
-                )
+                logger.info(f"Discord plugin: Loaded WiGLE cache from {CACHE_FILE}, {len(self.wigle_cache)} entries.")
             except Exception as e:
-                logger.error(
-                    f"Discord plugin: Error reading WiGLE cache from {CACHE_FILE}: {e}"
-                )
+                logger.error(f"Discord plugin: Error reading WiGLE cache from {CACHE_FILE}: {e}")
         else:
-            logger.info(
-                f"Discord plugin: No existing WiGLE cache file at {CACHE_FILE}; starting fresh."
-            )
+            logger.info(f"Discord plugin: No existing WiGLE cache file at {CACHE_FILE}; starting fresh.")
 
     def _save_wigle_cache(self):
         try:
             with open(CACHE_FILE, "w") as f:
                 json.dump(self.wigle_cache, f)
-            logger.info(
-                f"Discord plugin: Saved WiGLE cache to {CACHE_FILE}, "
-                f"{len(self.wigle_cache)} entries."
-            )
+            logger.info(f"Discord plugin: Saved WiGLE cache to {CACHE_FILE}, {len(self.wigle_cache)} entries.")
         except Exception as e:
             logger.error(f"Discord plugin: Error saving WiGLE cache to {CACHE_FILE}: {e}")
