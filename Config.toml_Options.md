@@ -1,454 +1,344 @@
-# Pwnagotchi Configuration Guide
+# Pwnagotchi Configuration Guide 🚀
 
-This document provides a detailed explanation of the configuration options for a Pwnagotchi, a DIY, AI-powered Wi-Fi hacking tool. The configuration file is typically located at `/etc/pwnagotchi/config.toml` and controls various aspects of the device's behavior, plugins, and user interface. Below, each section and option is described to help you customize your Pwnagotchi effectively.
+Welcome to the **Pwnagotchi Configuration Guide**! This `README.md` explains every option in the Pwnagotchi configuration file (`/etc/pwnagotchi/config.toml`). Whether you're a newbie or a pro, this guide makes it easy to customize your AI-powered Wi-Fi hacking buddy. 😎
+
+> **New to Pwnagotchi?** Pwnagotchi is a DIY device that learns to capture Wi-Fi handshakes. This file controls its behavior, plugins, and display. Let’s dive in! 🛠️
 
 ---
 
-## Table of Contents
-1. [Main Configuration (`[main]`)](#main-configuration)
-2. [Plugins (`[main.plugins.*]`)](#plugins)
-3. [Logging (`[main.log]`)](#logging)
-4. [Personality (`[personality]`)](#personality)
-5. [User Interface (`[ui]`)](#user-interface)
-6. [Bettercap (`[bettercap]`)](#bettercap)
-7. [Filesystem Memory (`[fs.memory]`)](#filesystem-memory)
+## 📋 Table of Contents
+- [Main Configuration](#main-configuration)
+- [Plugins](#plugins)
+- [Logging](#logging)
+- [Personality](#personality)
+- [User Interface](#user-interface)
+- [Bettercap](#bettercap)
+- [Filesystem Memory](#filesystem-memory)
+- [Tips for Beginners](#tips-for-beginners)
 
 ---
 
 ## Main Configuration
 
-The `[main]` section defines core settings for the Pwnagotchi.
+The `[main]` section sets up the core of your Pwnagotchi. Think of it as the brain’s basic settings. 🧠
 
-- **name** (`string`): The name of your Pwnagotchi, displayed on the UI and used for identification.
-  - Default: `"pwnagotchi"`
-  - Example: `name = "MyPwnagotchi"`
+| Setting | Description | Default | Example |
+|---------|-------------|---------|---------|
+| **name** | Your Pwnagotchi’s name, shown on the screen and for identification. | `pwnagotchi` | `name = "MyPwnagotchi"` |
+| **lang** | Language for the interface (e.g., `en` for English, `es` for Spanish). | `en` | `lang = "es"` |
+| **iface** | Wi-Fi interface for monitoring traffic (must be in monitor mode). | `wlan0mon` | `iface = "wlan1mon"` |
+| **mon_start_cmd** | Command to start monitor mode on the interface. | `/usr/bin/monstart` | `/usr/local/bin/start_monitor.sh` |
+| **mon_stop_cmd** | Command to stop monitor mode. | `/usr/bin/monstop` | `/usr/local/bin/stop_monitor.sh` |
+| **mon_max_blind_epochs** | Max cycles without detecting networks before restarting. | `5` | `10` |
+| **no_restart** | Set to `true` to prevent automatic restarts. | `false` | `true` |
+| **whitelist** | List of SSIDs or MAC addresses to skip (no hacking). | `[]` | `["MyHomeWiFi", "00:11:22:33:44:55"]` |
+| **confd** | Directory for additional config files to merge. | `/etc/pwnagotchi/conf.d/` | `/etc/pwnagotchi/custom/` |
+| **custom_plugin_repos** | URLs for custom plugin repositories. | `[]` | `["https://github.com/user/repo/archive/main.zip"]` |
+| **custom_plugins** | Directory for locally stored custom plugins. | `/usr/local/share/pwnagotchi/custom-plugins/` | `/home/pi/plugins/` |
 
-- **lang** (`string`): The language for the Pwnagotchi interface.
-  - Default: `"en"` (English)
-  - Example: `lang = "es"` (Spanish)
-
-- **iface** (`string`): The network interface used for monitoring Wi-Fi traffic.
-  - Default: `"wlan0mon"`
-  - Ensure the interface is in monitor mode.
-
-- **mon_start_cmd** (`string`): Command to start monitor mode on the specified interface.
-  - Default: `"/usr/bin/monstart"`
-  - Example: `mon_start_cmd = "/usr/local/bin/start_monitor.sh"`
-
-- **mon_stop_cmd** (`string`): Command to stop monitor mode.
-  - Default: `"/usr/bin/monstop"`
-
-- **mon_max_blind_epochs** (`integer`): Maximum number of epochs (cycles) the Pwnagotchi will operate without detecting networks before restarting.
-  - Default: `5`
-
-- **no_restart** (`boolean`): If `true`, prevents the Pwnagotchi from restarting automatically under certain conditions.
-  - Default: `false`
-
-- **whitelist** (`list`): List of SSIDs or MAC addresses to exclude from deauthentication or hacking attempts.
-  - Example: `whitelist = ["MyHomeWiFi", "00:11:22:33:44:55"]`
-
-- **confd** (`string`): Directory containing additional configuration files to merge with the main config.
-  - Default: `"/etc/pwnagotchi/conf.d/"`
-
-- **custom_plugin_repos** (`list`): URLs to custom plugin repositories for downloading additional plugins.
-  - Example: `custom_plugin_repos = ["https://github.com/user/repo/archive/main.zip"]`
-
-- **custom_plugins** (`string`): Directory where custom plugins are stored locally.
-  - Default: `"/usr/local/share/pwnagotchi/custom-plugins/"`
+> **💡 Tip**: Use `whitelist` to protect your home Wi-Fi from accidental attacks! Add your network’s SSID or router’s MAC address.
 
 ---
 
 ## Plugins
 
-The `[main.plugins.*]` sections configure various plugins to extend Pwnagotchi's functionality. Each plugin has an `enabled` flag and additional settings.
+Plugins add superpowers to your Pwnagotchi! 🦸 The `[main.plugins.*]` sections control these extras. Each plugin has an `enabled` setting (`true`/`false`) and specific options.
 
-### Auto-Tune (`[main.plugins.auto-tune]`)
-Optimizes Wi-Fi channel hopping for better performance.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `true`
+### 🔧 Auto-Tune
+Optimizes Wi-Fi channel hopping.
+- **enabled**: Turn on/off. Default: `true`.
 
-### Auto Backup (`[main.plugins.auto_backup]`)
-Automates backups of specified files.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **interval** (`string` or `integer`): Backup frequency (`"hourly"`, `"daily"`, or minutes).
-  - Default: `"daily"`
-- **max_tries** (`integer`): Maximum retry attempts for failed backups.
-  - Default: `0` (unlimited)
-- **backup_location** (`string`): Directory to store backups.
-  - Default: `"/home/pi/"`
-- **files** (`list`): Files/directories to back up.
-  - Example: `files = ["/root/settings.yaml", "/home/pi/handshakes"]`
-- **exclude** (`list`): Files/directories to exclude from backups.
-  - Example: `exclude = ["/etc/pwnagotchi/logs/*"]`
-- **commands** (`list`): Commands to execute for backup (e.g., `tar` for archiving).
-  - Example: `commands = ["tar cf {backup_file} {files}"]`
+### 💾 Auto Backup
+Backs up important files automatically.
+- **enabled**: Turn on/off. Default: `false`.
+- **interval**: How often to back up (`hourly`, `daily`, or minutes). Default: `daily`.
+- **max_tries**: Max retries for failed backups (0 = unlimited). Default: `0`.
+- **backup_location**: Where to save backups. Default: `/home/pi/`.
+- **files**: Files/folders to back up. Example: `["/root/settings.yaml", "/home/pi/handshakes"]`.
+- **exclude**: Files/folders to skip. Example: `["/etc/pwnagotchi/logs/*"]`.
+- **commands**: Backup commands (e.g., `tar` for zipping). Example: `["tar cf {backup_file} {files}"]`.
 
-### Auto-Update (`[main.plugins.auto-update]`)
-Automatically updates Pwnagotchi software and plugins.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `true`
-- **install** (`boolean`): If `true`, automatically installs updates.
-  - Default: `true`
-- **interval** (`integer`): Update check frequency (in days).
-  - Default: `1`
-- **token** (`string`): GitHub personal access token for API access (scope: `public_repo`).
-  - Default: `""` (empty)
+> **⚠️ Warning**: Set `backup_location` to a safe directory to avoid overwriting files!
 
-### Bluetooth Tethering (`[main.plugins.bt-tether]`)
-Enables internet tethering via Bluetooth.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **phone-name** (`string`): Name of the phone as displayed in Bluetooth settings.
-  - Default: `""`
-- **mac** (`string`): Bluetooth MAC address of the phone.
-  - Default: `""`
-- **phone** (`string`): Phone type (`"android"` or `"ios"`).
-  - Default: `""`
-- **ip** (`string`): IP address for tethering.
-  - Default: `"192.168.44.2"` (Android) or `"172.20.10.2"` (iOS)
-- **dns** (`string`): DNS servers to use.
-  - Default: `"8.8.8.8 1.1.1.1"` (Google DNS)
+### 🔄 Auto-Update
+Keeps Pwnagotchi and plugins up to date.
+- **enabled**: Turn on/off. Default: `true`.
+- **install**: Auto-install updates if `true`. Default: `true`.
+- **interval**: Days between update checks. Default: `1`.
+- **token**: GitHub token for API access (needs `public_repo` scope). Default: `""`.
 
-### Fix Services (`[main.plugins.fix_services]`)
+### 📱 Bluetooth Tethering
+Shares internet via Bluetooth.
+- **enabled**: Turn on/off. Default: `false`.
+- **phone-name**: Phone’s Bluetooth name. Default: `""`.
+- **mac**: Phone’s Bluetooth MAC address. Default: `""`.
+- **phone**: Phone type (`android` or `ios`). Default: `""`.
+- **ip**: Tethering IP address. Default: `192.168.44.2` (Android) or `172.20.10.2` (iOS).
+- **dns**: DNS servers (space-separated). Default: `8.8.8.8 1.1.1.1`.
+
+### 🛠️ Fix Services
 Ensures critical services are running.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `true`
+- **enabled**: Turn on/off. Default: `true`.
 
-### Cache (`[main.plugins.cache]`)
-Caches data to improve performance.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `true`
+### ⚡ Cache
+Speeds up performance with caching.
+- **enabled**: Turn on/off. Default: `true`.
 
-### Google Drive Sync (`[main.plugins.gdrivesync]`)
+### ☁️ Google Drive Sync
 Syncs backups to Google Drive.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **backupfiles** (`list`): Files to sync.
-  - Default: `[""]`
-- **backup_folder** (`string`): Google Drive folder for backups.
-  - Default: `"PwnagotchiBackups"`
-- **interval** (`integer`): Sync frequency (in hours).
-  - Default: `1`
+- **enabled**: Turn on/off. Default: `false`.
+- **backupfiles**: Files to sync. Default: `[""]`.
+- **backup_folder**: Google Drive folder. Default: `PwnagotchiBackups`.
+- **interval**: Sync frequency (hours). Default: `1`.
 
-### GPIO Buttons (`[main.plugins.gpio_buttons]`)
-Enables GPIO-connected buttons for interaction.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
+### 🕹️ GPIO Buttons
+Uses GPIO buttons for interaction.
+- **enabled**: Turn on/off. Default: `false`.
 
-### GPS (`[main.plugins.gps]`)
-Provides GPS functionality for location tracking.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **speed** (`integer`): Baud rate for GPS device.
-  - Default: `19200`
-- **device** (`string`): GPS device path or GPSD server.
-  - Default: `"/dev/ttyUSB0"` or `"localhost:2947"` for GPSD
+### 🌍 GPS
+Tracks location with a GPS module.
+- **enabled**: Turn on/off. Default: `false`.
+- **speed**: GPS baud rate. Default: `19200`.
+- **device**: GPS device path or GPSD server. Default: `/dev/ttyUSB0` or `localhost:2947`.
 
-### GPS Listener (`[main.plugins.gps_listener]`)
+### 📡 GPS Listener
 Listens for GPS data.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
+- **enabled**: Turn on/off. Default: `false`.
 
-### Grid (`[main.plugins.grid]`)
-Interacts with the Pwnagotchi community grid.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `true`
-- **report** (`boolean`): If `true`, reports captured handshakes to the grid.
-  - Default: `true`
+### 🌐 Grid
+Connects to the Pwnagotchi community grid.
+- **enabled**: Turn on/off. Default: `true`.
+- **report**: Share captured handshakes with the grid. Default: `true`.
 
-### Logtail (`[main.plugins.logtail]`)
-Displays recent log entries on the Pwnagotchi screen.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **max-lines** (`integer`): Maximum number of log lines to display.
-  - Default: `10000`
+### 📜 Logtail
+Shows recent logs on the screen.
+- **enabled**: Turn on/off. Default: `false`.
+- **max-lines**: Max log lines to display. Default: `10000`.
 
-### Memory/Temperature (`[main.plugins.memtemp]`)
-Displays system memory and temperature.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **scale** (`string`): Temperature scale (`"celsius"` or `"fahrenheit"`).
-  - Default: `"celsius"`
-- **orientation** (`string`): Display orientation (`"horizontal"` or `"vertical"`).
-  - Default: `"horizontal"`
+### 🌡️ Memory/Temperature
+Displays memory and temperature stats.
+- **enabled**: Turn on/off. Default: `false`.
+- **scale**: Temperature unit (`celsius` or `fahrenheit`). Default: `celsius`.
+- **orientation**: Display layout (`horizontal` or `vertical`). Default: `horizontal`.
 
-### OHC API (`[main.plugins.ohcapi]`)
-Integrates with an external API (specific to certain setups).
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **api_key** (`string`): API key for authentication.
-  - Default: `"sk_your_api_key_here"`
-- **receive_email** (`string`): Whether to receive email notifications (`"yes"` or `"no"`).
-  - Default: `"yes"`
+### 🔗 OHC API
+Connects to an external API (specific setups).
+- **enabled**: Turn on/off. Default: `false`.
+- **api_key**: API key for authentication. Default: `sk_your_api_key_here`.
+- **receive_email**: Get email notifications (`yes` or `no`). Default: `yes`.
 
-### PwnDroid (`[main.plugins.pwndroid]`)
-Displays GPS coordinates or altitude on the screen.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **display** (`boolean`): Show coordinates on the display.
-  - Default: `false`
-- **display_altitude** (`boolean`): Show altitude on the display.
-  - Default: `false`
+### 🤖 PwnDroid
+Shows GPS coordinates/altitude on the screen.
+- **enabled**: Turn on/off. Default: `false`.
+- **display**: Show coordinates. Default: `false`.
+- **display_altitude**: Show altitude. Default: `false`.
 
-### PiSugarX (`[main.plugins.pisugarx]`)
+### 🔋 PiSugarX
 Manages PiSugar battery modules.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **rotation** (`boolean`): Rotate display output.
-  - Default: `false`
-- **default_display** (`string`): Display mode (`"percentage"` or other).
-  - Default: `"percentage"`
-- **lowpower_shutdown** (`boolean`): Shut down when battery is low.
-  - Default: `true`
-- **lowpower_shutdown_level** (`integer`): Battery percentage for shutdown.
-  - Default: `10`
-- **max_charge_voltage_protection** (`boolean`): Limits battery charge to ~80% to extend lifespan.
-  - Default: `false`
+- **enabled**: Turn on/off. Default: `false`.
+- **rotation**: Rotate display output. Default: `false`.
+- **default_display**: Display mode (`percentage` or other). Default: `percentage`.
+- **lowpower_shutdown**: Shut down on low battery. Default: `true`.
+- **lowpower_shutdown_level**: Battery % for shutdown. Default: `10`.
+- **max_charge_voltage_protection**: Limit charge to ~80% for battery health. Default: `false`.
 
-### PwnCrack (`[main.plugins.pwncrack]`)
-Automates cracking of captured handshakes.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **key** (`string`): API key for cracking service.
-  - Default: `""`
+### 🔓 PwnCrack
+Cracks captured handshakes automatically.
+- **enabled**: Turn on/off. Default: `false`.
+- **key**: API key for cracking service. Default: `""`.
 
-### Session Stats (`[main.plugins.session-stats]`)
-Tracks session statistics.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **save_directory** (`string`): Directory to save session data.
-  - Default: `"/var/tmp/pwnagotchi/sessions/"`
+### 📊 Session Stats
+Tracks session data.
+- **enabled**: Turn on/off. Default: `false`.
+- **save_directory**: Where to save session data. Default: `/var/tmp/pwnagotchi/sessions/`.
 
-### UPS Hat C (`[main.plugins.ups_hat_c]`)
+### 🔋 UPS Hat C
 Manages UPS Hat C battery module.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **label_on** (`boolean`): Show "BAT" label or just percentage.
-  - Default: `true`
-- **shutdown** (`integer`): Battery percentage for shutdown.
-  - Default: `5`
-- **bat_x_coord** (`integer`): X-coordinate for battery display.
-  - Default: `140`
-- **bat_y_coord** (`integer`): Y-coordinate for battery display.
-  - Default: `0`
+- **enabled**: Turn on/off. Default: `false`.
+- **label_on**: Show `BAT` label or just %. Default: `true`.
+- **shutdown**: Battery % for shutdown. Default: `5`.
+- **bat_x_coord**: X-coordinate for battery display. Default: `140`.
+- **bat_y_coord**: Y-coordinate for battery display. Default: `0`.
 
-### UPS Lite (`[main.plugins.ups_lite]`)
+### 🔋 UPS Lite
 Manages UPS Lite battery module.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **shutdown** (`integer`): Battery percentage for shutdown.
-  - Default: `2`
+- **enabled**: Turn on/off. Default: `false`.
+- **shutdown**: Battery % for shutdown. Default: `2`.
 
-### Web Configuration (`[main.plugins.webcfg]`)
-Provides a web interface for configuration.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `true`
+### 🌐 Web Configuration
+Provides a web interface for settings.
+- **enabled**: Turn on/off. Default: `true`.
 
-### Web GPS Map (`[main.plugins.webgpsmap]`)
-Displays GPS data on a web-based map.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
+### 🗺️ Web GPS Map
+Shows GPS data on a web map.
+- **enabled**: Turn on/off. Default: `false`.
 
-### Wigle (`[main.plugins.wigle]`)
+### 📍 Wigle
 Uploads Wi-Fi data to Wigle.net.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **api_key** (`string`): Wigle API key.
-  - Default: `""`
-- **cvs_dir** (`string`): Directory for CSV output.
-  - Default: `"/tmp"`
-- **donate** (`boolean`): Donate data to Wigle.
-  - Default: `false`
-- **timeout** (`integer`): Upload timeout (seconds).
-  - Default: `30`
-- **position** (`list`): Display position for Wigle data `[x, y]`.
-  - Default: `[7, 85]`
+- **enabled**: Turn on/off. Default: `false`.
+- **api_key**: Wigle API key. Default: `""`.
+- **cvs_dir**: Directory for CSV files. Default: `/tmp`.
+- **donate**: Share data with Wigle. Default: `false`.
+- **timeout**: Upload timeout (seconds). Default: `30`.
+- **position**: Display position `[x, y]`. Default: `[7, 85]`.
 
-### WPA-Sec (`[main.plugins.wpa-sec]`)
+### 🔐 WPA-Sec
 Uploads handshakes to wpa-sec.stanev.org for cracking.
-- **enabled** (`boolean`): Enable/disable the plugin.
-  - Default: `false`
-- **api_key** (`string`): WPA-Sec API key.
-  - Default: `""`
-- **api_url** (`string`): WPA-Sec API endpoint.
-  - Default: `"https://wpa-sec.stanev.org"`
-- **download_results** (`boolean`): Download cracking results.
-  - Default: `false`
-- **show_pwd** (`boolean`): Display cracked passwords.
-  - Default: `false`
+- **enabled**: Turn on/off. Default: `false`.
+- **api_key**: WPA-Sec API key. Default: `""`.
+- **api_url**: WPA-Sec API endpoint. Default: `https://wpa-sec.stanev.org`.
+- **download_results**: Download cracking results. Default: `false`.
+- **show_pwd**: Show cracked passwords. Default: `false`.
+
+> **🎉 Pro Tip**: Enable plugins like `auto-update` and `webcfg` to keep your Pwnagotchi fresh and easy to manage via a browser!
 
 ---
 
 ## Logging
 
-The `[main.log]` section configures logging behavior.
+The `[main.log]` section controls where logs are stored.
 
-- **path** (`string`): Path to the main log file.
-  - Default: `"/etc/pwnagotchi/log/pwnagotchi.log"`
-- **path-debug** (`string`): Path to the debug log file.
-  - Default: `"/etc/pwnagotchi/log/pwnagotchi-debug.log"`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **path** | Main log file location. | `/etc/pwnagotchi/log/pwnagotchi.log` |
+| **path-debug** | Debug log file location. | `/etc/pwnagotchi/log/pwnagotchi-debug.log` |
 
-### Log Rotation (`[main.log.rotation]`)
-Manages log file rotation to prevent excessive disk usage.
-- **enabled** (`boolean`): Enable/disable log rotation.
-  - Default: `true`
-- **size** (`string`): Maximum log file size before rotation (e.g., `"10M"` for 10MB).
-  - Default: `"10M"`
+### 🔄 Log Rotation
+Prevents logs from eating up disk space.
+- **enabled**: Turn on/off. Default: `true`.
+- **size**: Max log size before rotation (e.g., `10M` = 10MB). Default: `10M`.
 
 ---
 
 ## Personality
 
-The `[personality]` section controls the Pwnagotchi's AI behavior and Wi-Fi interaction settings.
+The `[personality]` section defines how Pwnagotchi behaves and interacts with Wi-Fi networks. It’s like setting its mood and tactics! 😈
 
-- **advertise** (`boolean`): If `true`, advertises the Pwnagotchi as an access point.
-  - Default: `true`
-- **deauth** (`boolean`): If `true`, performs deauthentication attacks to capture handshakes.
-  - Default: `true`
-- **associate** (`boolean`): If `true`, associates with nearby access points.
-  - Default: `true`
-- **channels** (`list`): Wi-Fi channels to scan (empty for all).
-  - Default: `[]`
-- **min_rssi** (`integer`): Minimum signal strength (dBm) for networks to consider.
-  - Default: `-200`
-- **ap_ttl** (`integer`): Time-to-live (seconds) for access point advertisements.
-  - Default: `120`
-- **sta_ttl** (`integer`): Time-to-live (seconds) for station (client) connections.
-  - Default: `300`
-- **recon_time** (`integer`): Time (seconds) for reconnaissance scans.
-  - Default: `30`
-- **max_inactive_scale** (`integer`): Multiplier for inactive network detection.
-  - Default: `2`
-- **recon_inactive_multiplier** (`integer`): Multiplier for inactive reconnaissance.
-  - Default: `2`
-- **hop_recon_time** (`integer`): Time (seconds) for channel hopping during recon.
-  - Default: `10`
-- **min_recon_time** (`integer`): Minimum time (seconds) for reconnaissance.
-  - Default: `5`
-- **max_interactions** (`integer`): Maximum interactions per network per epoch.
-  - Default: `3`
-- **max_misses_for_recon** (`integer`): Maximum missed scans before considering a network inactive.
-  - Default: `5`
-- **excited_num_epochs** (`integer`): Epochs before transitioning from "excited" state.
-  - Default: `10`
-- **bored_num_epochs** (`integer`): Epochs before transitioning to "bored" state.
-  - Default: `15`
-- **sad_num_epochs** (`integer`): Epochs before transitioning to "sad" state.
-  - Default: `25`
-- **bond_encounters_factor** (`integer`): Factor for calculating bonding with other Pwnagotchis.
-  - Default: `20000`
-- **throttle_a** (`float`): Throttling factor for association.
-  - Default: `0.4`
-- **throttle_d** (`float`): Throttling factor for deauthentication.
-  - Default: `0.9`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **advertise** | Advertise as an access point. | `true` |
+| **deauth** | Perform deauth attacks to capture handshakes. | `true` |
+| **associate** | Connect to nearby access points. | `true` |
+| **channels** | Wi-Fi channels to scan (empty = all). | `[]` |
+| **min_rssi** | Min signal strength (dBm) for networks. | `-200` |
+| **ap_ttl** | Time-to-live (seconds) for access point ads. | `120` |
+| **sta_ttl** | Time-to-live (seconds) for client connections. | `300` |
+| **recon_time** | Recon scan duration (seconds). | `30` |
+| **max_inactive_scale** | Multiplier for inactive network detection. | `2` |
+| **recon_inactive_multiplier** | Multiplier for inactive recon. | `2` |
+| **hop_recon_time** | Channel hop duration (seconds). | `10` |
+| **min_recon_time** | Min recon duration (seconds). | `5` |
+| **max_interactions** | Max interactions per network per cycle. | `3` |
+| **max_misses_for_recon** | Max missed scans before network is inactive. | `5` |
+| **excited_num_epochs** | Cycles before leaving "excited" state. | `10` |
+| **bored_num_epochs** | Cycles before entering "bored" state. | `15` |
+| **sad_num_epochs** | Cycles before entering "sad" state. | `25` |
+| **bond_encounters_factor** | Bonding factor with other Pwnagotchis. | `20000` |
+| **throttle_a** | Throttling for association (0.0-1.0). | `0.4` |
+| **throttle_d** | Throttling for deauth (0.0-1.0). | `0.9` |
+
+> **😺 Fun Fact**: Pwnagotchi changes moods (excited, bored, sad) based on its activity. Tweak these settings to make it more aggressive or chill!
 
 ---
 
 ## User Interface
 
-The `[ui]` section configures the Pwnagotchi's display and web interface.
+The `[ui]` section controls the screen and web interface. Make your Pwnagotchi look cool! 😎
 
-- **invert** (`boolean`): If `true`, inverts the display (white background, black text).
-  - Default: `false` (black background)
-- **cursor** (`boolean`): Show/hide the cursor on the display.
-  - Default: `true`
-- **fps** (`float`): Frames per second for display updates (0.0 for default).
-  - Default: `0.0`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **invert** | Set to `true` for white background, `false` for black. | `false` |
+| **cursor** | Show/hide cursor on screen. | `true` |
+| **fps** | Frames per second for display (0.0 = default). | `0.0` |
 
-### Font (`[ui.font]`)
-Configures the display font.
-- **name** (`string`): Font name (e.g., `"DejaVuSansMono"`, `"fonts-japanese-gothic"` for Japanese).
-  - Default: `"DejaVuSansMono"`
-- **size_offset** (`integer`): Adjustment to font size.
-  - Default: `0`
+### 🖌️ Font
+Customizes the display font.
+- **name**: Font name (e.g., `DejaVuSansMono`, `fonts-japanese-gothic` for Japanese). Default: `DejaVuSansMono`.
+- **size_offset**: Adjusts font size. Default: `0`.
 
-### Faces (`[ui.faces]`)
-Defines ASCII art for Pwnagotchi's emotional states.
-- **look_r**, **look_l**, etc. (`string`): ASCII art for various states (e.g., happy, sad).
-  - Example: `happy = "(•‿‿•)"`
-- **png** (`boolean`): If `true`, uses PNG images instead of ASCII.
-  - Default: `false`
-- **position_x**, **position_y** (`integer`): Coordinates for face display.
-  - Default: `position_x = 0`, `position_y = 34`
+### 😸 Faces
+Sets ASCII art for Pwnagotchi’s emotions.
+- **look_r**, **look_l**, etc.: ASCII for states like `happy`, `sad`. Example: `happy = "(•‿‿•)"`.
+- **png**: Use PNG images instead of ASCII. Default: `false`.
+- **position_x**, **position_y**: Face display coordinates. Default: `0`, `34`.
 
-### Web Interface (`[ui.web]`)
-Configures the web-based UI.
-- **enabled** (`boolean`): Enable/disable the web interface.
-  - Default: `true`
-- **address** (`string`): Listening address (`"::"` for IPv4/IPv6, `"0.0.0.0"` for IPv4 only).
-  - Default: `"::"`
-- **auth** (`boolean`): Enable/disable authentication.
-  - Default: `false`
-- **username**, **password** (`string`): Credentials for web access (if `auth = true`).
-  - Default: `"changeme"`
-- **origin** (`string`): Allowed origin for web requests.
-  - Default: `""`
-- **port** (`integer`): Web server port.
-  - Default: `8080`
-- **on_frame** (`string`): Command to run on each frame update.
-  - Default: `""`
+### 🌐 Web Interface
+Controls the browser-based UI.
+- **enabled**: Turn on/off. Default: `true`.
+- **address**: Listening address (`::` for IPv4/IPv6, `0.0.0.0` for IPv4). Default: `::`.
+- **auth**: Require login. Default: `false`.
+- **username**, **password**: Web login credentials (if `auth = true`). Default: `changeme`.
+- **origin**: Allowed web request origin. Default: `""`.
+- **port**: Web server port. Default: `8080`.
+- **on_frame**: Command to run per frame update. Default: `""`.
 
-### Display (`[ui.display]`)
-Configures the physical display.
-- **enabled** (`boolean`): Enable/disable the display.
-  - Default: `false`
-- **rotation** (`integer`): Display rotation (degrees).
-  - Default: `180`
-- **type** (`string`): Display type (e.g., `"waveshare_4"`).
-  - Default: `"waveshare_4"`
+### 📺 Display
+Configures the physical screen.
+- **enabled**: Turn on/off. Default: `false`.
+- **rotation**: Screen rotation (degrees). Default: `180`.
+- **type**: Display type (e.g., `waveshare_4`). Default: `waveshare_4`.
+
+> **🖼️ Display Tip**: Enable `ui.display` and set `type` to match your screen (e.g., Waveshare). Check the Pwnagotchi docs for supported displays!
 
 ---
 
 ## Bettercap
 
-The `[bettercap]` section configures the Bettercap framework, which Pwnagotchi uses for Wi-Fi hacking.
+The `[bettercap]` section configures Bettercap, the tool Pwnagotchi uses for Wi-Fi hacking.
 
-- **handshakes** (`string`): Directory to store captured handshake files.
-  - Default: `"/home/pi/handshakes"`
-- **silence** (`list`): Bettercap events to suppress in logs.
-  - Example: `silence = ["wifi.ap.new", "wifi.client.probe"]`
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **handshakes** | Directory for captured handshake files. | `/home/pi/handshakes` |
+| **silence** | Bettercap events to hide from logs. | `["wifi.ap.new", "wifi.client.probe", ...]` |
 
 ---
 
 ## Filesystem Memory
 
-The `[fs.memory]` section configures in-memory filesystems for logs and temporary data.
+The `[fs.memory]` section uses RAM for logs and temporary data to reduce SD card wear.
 
-### Log Mount (`[fs.memory.mounts.log]`)
-Mounts logs to a RAM-based filesystem.
-- **enabled** (`boolean`): Enable/disable the mount.
-  - Default: `true`
-- **mount** (`string`): Mount point for logs.
-  - Default: `"/etc/pwnagotchi/log/"`
-- **size** (`string`): Size of the filesystem (e.g., `"50M"`).
-  - Default: `"50M"`
-- **sync** (`integer`): Sync interval (seconds) to disk.
-  - Default: `60`
-- **zram** (`boolean`): Use zram for compression.
-  - Default: `true`
-- **rsync** (`boolean`): Sync to disk using rsync.
-  - Default: `true`
+### 📝 Log Mount
+Stores logs in RAM.
+- **enabled**: Turn on/off. Default: `true`.
+- **mount**: Log mount point. Default: `/etc/pwnagotchi/log/`.
+- **size**: Filesystem size (e.g., `50M`). Default: `50M`.
+- **sync**: Sync to disk interval (seconds). Default: `60`.
+- **zram**: Use zram compression. Default: `true`.
+- **rsync**: Sync to disk with rsync. Default: `true`.
 
-### Data Mount (`[fs.memory.mounts.data]`)
-Mounts temporary data to a RAM-based filesystem.
-- **enabled** (`boolean`): Enable/disable the mount.
-  - Default: `true`
-- **mount** (`string`): Mount point for data.
-  - Default: `"/var/tmp/pwnagotchi"`
-- **size** (`string`): Size of the filesystem.
-  - Default: `"10M"`
-- **sync** (`integer`): Sync interval (seconds).
-  - Default: `3600`
-- **zram** (`boolean`): Use zram for compression.
-  - Default: `true`
-- **rsync** (`boolean`): Sync to disk using rsync.
-  - Default: `true`
+### 📦 Data Mount
+Stores temporary data in RAM.
+- **enabled**: Turn on/off. Default: `true`.
+- **mount**: Data mount point. Default: `/var/tmp/pwnagotchi`.
+- **size**: Filesystem size. Default: `10M`.
+- **sync**: Sync interval (seconds). Default: `3600`.
+- **zram**: Use zram compression. Default: `true`.
+- **rsync**: Sync to disk with rsync. Default: `true`.
+
+---
+
+## Tips for Beginners
+
+<details>
+<summary>🆕 New to Pwnagotchi? Click here for quick tips!</summary>
+
+- **Start Simple**: Enable only a few plugins like `auto-tune`, `auto-update`, and `webcfg` to get started.
+- **Protect Your Network**: Add your home Wi-Fi to `whitelist` to avoid accidental attacks.
+- **Use the Web Interface**: Set `ui.web.enabled = true` and visit `http://<pwnagotchi-ip>:8080` to configure via browser.
+- **Check Logs**: If something goes wrong, look at `/etc/pwnagotchi/log/pwnagotchi.log` for clues.
+- **Backup Regularly**: Enable `auto_backup` to save your settings and handshakes.
+- **Join the Community**: Visit [pwnagotchi.ai](https://pwnagotchi.ai/) or X for tips and plugin ideas!
+
+</details>
 
 ---
 
 ## Contributing
-Feel free to contribute to this documentation by submitting pull requests or issues on the GitHub repository. For Pwnagotchi-specific questions, refer to the official [Pwnagotchi documentation](https://pwnagotchi.ai/) or community forums.
+Got ideas to improve this guide? Submit a pull request or issue on GitHub! For Pwnagotchi questions, check the [official docs](https://pwnagotchi.ai/) or community forums.
 
 ## License
 This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+---
+
+Happy hacking with your Pwnagotchi! 🎉
