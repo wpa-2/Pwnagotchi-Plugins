@@ -327,7 +327,7 @@ Stores temporary data in RAM.
 - **Use the Web Interface**: Set `ui.web.enabled = true` and visit `http://<pwnagotchi-ip>:8080` to configure via browser.
 - **Check Logs**: If something goes wrong, look at `/etc/pwnagotchi/log/pwnagotchi.log` for clues.
 - **Backup Regularly**: Enable `auto_backup` to save your settings and handshakes.
-- **Join the Community**: Visit [pwnagotchi.ai](https://pwnagotchi.ai/) or X for tips and plugin ideas!
+- **Join the Community**: Visit [pwnagotchi.org](https://pwnagotchi.org/) or X for tips and plugin ideas!
 
 </details>
 
