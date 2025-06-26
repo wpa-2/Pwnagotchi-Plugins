@@ -24,8 +24,8 @@ class Discord(plugins.Plugin):
     Sends handshake notifications to Discord with location data from WiGLE.
     """
 
-    __author__ = "WPA2 & User Collaboration"
-    __version__ = '4.0.0 (Stable)'
+    __author__ = "WPA2"
+    __version__ = '2.2.4'
     __license__ = 'GPL3'
     __description__ = 'Sends Pwnagotchi handshakes to Discord, with location data from WiGLE.'
 
