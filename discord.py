@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 class Discord(plugins.Plugin):
     """
     Discord plugin for Pwnagotchi.
-    Sends handshakes to Discord and a summary of the *previous* session on startup.
+    Sends handshake notifications to Discord with location data from WiGLE.
     """
 
     __author__ = "WPA2 & User Collaboration"
-    __version__ = '3.3.0'
+    __version__ = '4.0.0 (Stable)'
     __license__ = 'GPL3'
-    __description__ = 'Sends handshakes to Discord and a summary of the previous session on startup.'
+    __description__ = 'Sends Pwnagotchi handshakes to Discord, with location data from WiGLE.'
 
     def __init__(self):
         super().__init__()
@@ -35,8 +35,6 @@ class Discord(plugins.Plugin):
         self.api_key: Optional[str] = None
         self.http_session = requests.Session()
         self.wigle_cache = {}
-        # Path to a file to track which sessions have been reported
-        self.reported_session_file = '/var/tmp/pwnagotchi_discord_plugin.sent'
 
     def on_loaded(self):
         logging.info('Discord plugin loaded.')
@@ -46,73 +44,12 @@ class Discord(plugins.Plugin):
         if self.webhook_url:
             logging.info("Discord plugin: Webhook URL set.")
         else:
-            logging.error("Discord plugin: Webhook URL not provided. Plugin will be disabled.")
+            logging.error("Discord plugin: Webhook URL not provided. Plugin will not be able to send messages.")
 
         if self.api_key:
             logging.info("Discord plugin: WiGLE API key set.")
         else:
             logging.warning("Discord plugin: WiGLE API key not provided. Location services will be disabled.")
-
-    def on_ready(self, agent: Agent):
-        """
-        Hook is called when the Pwnagotchi is ready and has loaded its data.
-        We use this to send the summary of the *last* session.
-        """
-        logging.info("Discord plugin: Pwnagotchi is ready. Checking for last session summary to send.")
-
-        last_session = agent.last_session
-
-        # Check if the session object and its timestamps are valid before proceeding.
-        if not last_session or not isinstance(last_session.started_at, datetime) or not isinstance(last_session.ended_at, datetime):
-            logging.info("Discord plugin: No valid previous session data with timestamps found.")
-            return
-
-        # CORRECTED DURATION CHECK: Calculate duration in seconds from the datetime objects.
-        duration_in_seconds = (last_session.ended_at - last_session.started_at).total_seconds()
-        if duration_in_seconds < 1:
-            logging.info("Discord plugin: Previous session was too short to summarize.")
-            return
-
-        # Use the session's end time as its unique identifier.
-        session_unique_id = last_session.ended_at.isoformat()
-
-        # Check if we have already reported this session
-        try:
-            with open(self.reported_session_file, 'r') as f:
-                last_reported_id = f.read().strip()
-            if last_reported_id == session_unique_id:
-                logging.info(f"Discord plugin: Summary for session ending at {session_unique_id} has already been sent.")
-                return
-        except FileNotFoundError:
-            pass # File doesn't exist, this is the first run.
-        except Exception as e:
-            logging.error(f"Discord plugin: Error reading reported session file: {e}")
-
-        logging.info(f"Discord plugin: Sending summary for previous session ending at {session_unique_id}")
-
-        summary_embed = {
-            'title': '📊 Previous Session Summary',
-            'description': f"Report from **{pwnagotchi.name()}**'s last session.",
-            'fields': [
-                # Use the friendly string for display, but the calculation for logic.
-                {'name': '🏁 Duration', 'value': str(last_session.duration), 'inline': True},
-                {'name': '🤝 Handshakes', 'value': str(last_session.handshakes), 'inline': True},
-                {'name': '💪 Peers', 'value': str(last_session.peers), 'inline': True},
-            ],
-            'timestamp': last_session.ended_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            'color': 0xFFC300 # Gold
-        }
-        self.send_discord_notification(
-            content=f"Pwnagotchi **{pwnagotchi.name()}** has booted up.",
-            embed_data=[summary_embed]
-        )
-
-        # After sending, save the session's unique ID to the file to prevent re-sending
-        try:
-            with open(self.reported_session_file, 'w') as f:
-                f.write(session_unique_id)
-        except Exception as e:
-            logging.error(f"Discord plugin: Error writing to reported session file: {e}")
 
     def send_discord_notification(self, content: str, embed_data: Optional[List[Dict[str, Any]]] = None) -> None:
         if not self.webhook_url:
