@@ -24,7 +24,7 @@ class Discord(plugins.Plugin):
     """
 
     __author__ = "WPA2 & User Collaboration"
-    __version__ = '3.1.0'
+    __version__ = '3.2.0'
     __license__ = 'GPL3'
     __description__ = 'Sends handshakes to Discord and a summary of the previous session on startup.'
 
@@ -46,7 +46,7 @@ class Discord(plugins.Plugin):
             logging.info("Discord plugin: Webhook URL set.")
         else:
             logging.error("Discord plugin: Webhook URL not provided. Plugin will be disabled.")
-        
+
         if self.api_key:
             logging.info("Discord plugin: WiGLE API key set.")
         else:
@@ -58,29 +58,34 @@ class Discord(plugins.Plugin):
         We use this to send the summary of the *last* session.
         """
         logging.info("Discord plugin: Pwnagotchi is ready. Checking for last session summary to send.")
-        
+
         last_session = agent.last_session
-        
-        # CORRECTED CHECK: Ensure the session object exists, has an ID, and ran for more than 0 seconds.
-        if not last_session or not last_session.session_id or last_session.duration < 1:
+
+        # CORRECTED CHECK: Ensure the session object exists and ran for a meaningful amount of time.
+        if not last_session or last_session.duration < 1:
             logging.info("Discord plugin: No valid previous session data found to summarize.")
+            return
+
+        # Use the session's end time as its unique identifier.
+        session_unique_id = last_session.ended_at.isoformat() if last_session.ended_at else None
+        if not session_unique_id:
+            logging.warning("Discord plugin: Last session has no end time, cannot determine uniqueness.")
             return
 
         # Check if we have already reported this session
         try:
             with open(self.reported_session_file, 'r') as f:
                 last_reported_id = f.read().strip()
-            if last_reported_id == last_session.session_id:
-                logging.info(f"Discord plugin: Summary for session {last_session.session_id} has already been sent.")
+            if last_reported_id == session_unique_id:
+                logging.info(f"Discord plugin: Summary for session ending at {session_unique_id} has already been sent.")
                 return
         except FileNotFoundError:
-            # File doesn't exist, so we've never sent a summary before.
-            pass
+            pass # File doesn't exist, so we've never sent a summary before.
         except Exception as e:
             logging.error(f"Discord plugin: Error reading reported session file: {e}")
 
-        logging.info(f"Discord plugin: Sending summary for previous session: {last_session.session_id}")
-        
+        logging.info(f"Discord plugin: Sending summary for previous session ending at {session_unique_id}")
+
         summary_embed = {
             'title': '📊 Previous Session Summary',
             'description': f"Report from **{pwnagotchi.name()}**'s last session.",
@@ -89,7 +94,7 @@ class Discord(plugins.Plugin):
                 {'name': '🤝 Handshakes', 'value': str(last_session.handshakes), 'inline': True},
                 {'name': '💪 Peers', 'value': str(last_session.peers), 'inline': True},
             ],
-            'timestamp': last_session.ended_at.strftime("%Y-%m-%dT%H:%M:%SZ") if last_session.ended_at else time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            'timestamp': last_session.ended_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
             'color': 0xFFC300 # Gold
         }
         self.send_discord_notification(
@@ -97,10 +102,10 @@ class Discord(plugins.Plugin):
             embed_data=[summary_embed]
         )
 
-        # After sending, save the session ID to the file to prevent re-sending
+        # After sending, save the session's unique ID to the file to prevent re-sending
         try:
             with open(self.reported_session_file, 'w') as f:
-                f.write(last_session.session_id)
+                f.write(session_unique_id)
         except Exception as e:
             logging.error(f"Discord plugin: Error writing to reported session file: {e}")
 
