@@ -23,7 +23,7 @@ class Discord(plugins.Plugin):
     Sends handshakes to Discord and a summary of the *previous* session on startup.
     """
 
-    __author__ = "WPA2 & User Collaboration"
+    __author__ = "WPA2"
     __version__ = '3.0.0'
     __license__ = 'GPL3'
     __description__ = 'Sends handshakes to Discord and a summary of the previous session on startup.'
