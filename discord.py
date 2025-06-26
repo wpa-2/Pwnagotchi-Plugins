@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -24,7 +25,7 @@ class Discord(plugins.Plugin):
     """
 
     __author__ = "WPA2 & User Collaboration"
-    __version__ = '3.2.0'
+    __version__ = '3.3.0'
     __license__ = 'GPL3'
     __description__ = 'Sends handshakes to Discord and a summary of the previous session on startup.'
 
@@ -61,16 +62,19 @@ class Discord(plugins.Plugin):
 
         last_session = agent.last_session
 
-        # CORRECTED CHECK: Ensure the session object exists and ran for a meaningful amount of time.
-        if not last_session or last_session.duration < 1:
-            logging.info("Discord plugin: No valid previous session data found to summarize.")
+        # Check if the session object and its timestamps are valid before proceeding.
+        if not last_session or not isinstance(last_session.started_at, datetime) or not isinstance(last_session.ended_at, datetime):
+            logging.info("Discord plugin: No valid previous session data with timestamps found.")
+            return
+
+        # CORRECTED DURATION CHECK: Calculate duration in seconds from the datetime objects.
+        duration_in_seconds = (last_session.ended_at - last_session.started_at).total_seconds()
+        if duration_in_seconds < 1:
+            logging.info("Discord plugin: Previous session was too short to summarize.")
             return
 
         # Use the session's end time as its unique identifier.
-        session_unique_id = last_session.ended_at.isoformat() if last_session.ended_at else None
-        if not session_unique_id:
-            logging.warning("Discord plugin: Last session has no end time, cannot determine uniqueness.")
-            return
+        session_unique_id = last_session.ended_at.isoformat()
 
         # Check if we have already reported this session
         try:
@@ -80,7 +84,7 @@ class Discord(plugins.Plugin):
                 logging.info(f"Discord plugin: Summary for session ending at {session_unique_id} has already been sent.")
                 return
         except FileNotFoundError:
-            pass # File doesn't exist, so we've never sent a summary before.
+            pass # File doesn't exist, this is the first run.
         except Exception as e:
             logging.error(f"Discord plugin: Error reading reported session file: {e}")
 
@@ -90,6 +94,7 @@ class Discord(plugins.Plugin):
             'title': '📊 Previous Session Summary',
             'description': f"Report from **{pwnagotchi.name()}**'s last session.",
             'fields': [
+                # Use the friendly string for display, but the calculation for logic.
                 {'name': '🏁 Duration', 'value': str(last_session.duration), 'inline': True},
                 {'name': '🤝 Handshakes', 'value': str(last_session.handshakes), 'inline': True},
                 {'name': '💪 Peers', 'value': str(last_session.peers), 'inline': True},
