@@ -23,8 +23,8 @@ class Discord(plugins.Plugin):
     Sends handshakes to Discord and a summary of the *previous* session on startup.
     """
 
-    __author__ = "WPA2"
-    __version__ = '3.0.0'
+    __author__ = "WPA2 & User Collaboration"
+    __version__ = '3.1.0'
     __license__ = 'GPL3'
     __description__ = 'Sends handshakes to Discord and a summary of the previous session on startup.'
 
@@ -60,8 +60,10 @@ class Discord(plugins.Plugin):
         logging.info("Discord plugin: Pwnagotchi is ready. Checking for last session summary to send.")
         
         last_session = agent.last_session
-        if not last_session or not last_session.is_real():
-            logging.info("Discord plugin: No previous session data found to summarize.")
+        
+        # CORRECTED CHECK: Ensure the session object exists, has an ID, and ran for more than 0 seconds.
+        if not last_session or not last_session.session_id or last_session.duration < 1:
+            logging.info("Discord plugin: No valid previous session data found to summarize.")
             return
 
         # Check if we have already reported this session
@@ -76,7 +78,6 @@ class Discord(plugins.Plugin):
             pass
         except Exception as e:
             logging.error(f"Discord plugin: Error reading reported session file: {e}")
-
 
         logging.info(f"Discord plugin: Sending summary for previous session: {last_session.session_id}")
         
