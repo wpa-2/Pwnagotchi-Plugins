@@ -59,7 +59,7 @@ exclude = [
 
 To restore after flashing 
 ```
-sudo tar xf /home/pi/NAME-backup.tar -C /
+sudo tar xzf /home/pi/NAME-backup.tar.gz -C /
 ```
 
 
