@@ -81,7 +81,6 @@ class AutoBackup(plugins.Plugin):
             logging.warning("AUTO-BACKUP: No files specified in config were found to back up.")
             return
 
-        # **FIX IS HERE**: Check if config is a function and call it if needed.
         global_config = getattr(agent, 'config', None)
         if callable(global_config):
             global_config = global_config()
