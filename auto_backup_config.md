@@ -2,7 +2,7 @@ Old style
 ```
 main.plugins.auto_backup.enabled = true
 main.plugins.auto_backup.interval = "60"
-main.plugins.auto_backup.max_tries = 0
+main.plugins.auto_backup.max_tries = 3
 main.plugins.auto_backup.backup_location = "/home/pi/"
 main.plugins.auto_backup.files = [
  "/root/settings.yaml",
@@ -18,13 +18,14 @@ main.plugins.auto_backup.files = [
  "/etc/ssh/",
  "/home/pi/.bashrc",
  "/home/pi/.profile",
- "/home/pi/.wpa_sec_uploads"
+ "/home/pi/.wpa_sec_uploads",
 ]
 main.plugins.auto_backup.exclude = [
  "/etc/pwnagotchi/logs/*",
  "*.bak",
- "*.tmp"
+ "*.tmp",
 ]
+
 ```
 New style
 ```
