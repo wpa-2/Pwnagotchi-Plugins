@@ -33,13 +33,14 @@ Keep your handshakes, settings, and other critical files safe! The **AutoBackup*
 
 ### ⚙️ Configuration
 
-Add the following block to your `/etc/pwnagotchi/config.toml` file:
+Pwnagotchi's `config.toml` supports two configuration formats. The modern "New Style" is recommended, but the "Old Style" also works.
 
+#### New Style (Recommended)
 ```toml
 [main.plugins.auto_backup]
 enabled = true
-interval = "daily"
-max_tries = 3
+interval = "60"
+max_tries = 0
 backup_location = "/home/pi/"
 files = [
  "/root/settings.yaml",
@@ -59,6 +60,37 @@ files = [
 ]
 exclude = [
   "/etc/pwnagotchi/logs/*"
+  "*.bak",
+  "*.tmp",
+]
+```
+
+#### Old Style
+```toml
+main.plugins.auto_backup.enabled = true
+main.plugins.auto_backup.interval = "60"
+main.plugins.auto_backup.max_tries = 3
+main.plugins.auto_backup.backup_location = "/home/pi/"
+main.plugins.auto_backup.files = [
+ "/root/settings.yaml",
+ "/root/client_secrets.json",
+ "/root/.api-report.json",
+ "/root/.ssh",
+ "/root/.bashrc",
+ "/root/.profile",
+ "/home/pi/handshakes",
+ "/root/peers",
+ "/etc/pwnagotchi/",
+ "/usr/local/share/pwnagotchi/custom-plugins",
+ "/etc/ssh/",
+ "/home/pi/.bashrc",
+ "/home/pi/.profile",
+ "/home/pi/.wpa_sec_uploads",
+]
+main.plugins.auto_backup.exclude = [
+ "/etc/pwnagotchi/logs/*",
+ "*.bak",
+ "*.tmp",
 ]
 ```
 
@@ -151,5 +183,3 @@ Add this to your `/etc/pwnagotchi/config.toml`:
 [main.plugins.wiglelocator]
 enabled = true
 api_key = "ENCODED FOR USE API KEY "
-
-```
