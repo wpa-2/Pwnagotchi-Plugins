@@ -59,7 +59,7 @@ files = [
  "/home/pi/.wpa_sec_uploads"
 ]
 exclude = [
-  "/etc/pwnagotchi/logs/*"
+  "/etc/pwnagotchi/logs/*",
   "*.bak",
   "*.tmp",
 ]
