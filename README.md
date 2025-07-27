@@ -123,6 +123,11 @@ enabled = true
 webhook_url = "YOUR_DISCORD_CHANNEL_WEB_HOOK_URL"
 wigle_api_key = "ENCODED FOR USE API KEY "
 ```
+```Old Stle
+main.plugins.discord.enabled = true
+main.plugins.discord.webhook_url = ""
+main.plugins.discord.wigle_api_key = ""
+```
 
 ---
 
