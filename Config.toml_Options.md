@@ -1,6 +1,6 @@
 # Pwnagotchi Configuration Guide 🚀
 
-Welcome to the **Pwnagotchi Configuration Guide**! This `README.md` explains every option in the Pwnagotchi configuration file (`/etc/pwnagotchi/config.toml`). Whether you're a newbie or a pro, this guide makes it easy to customize your AI-powered Wi-Fi hacking buddy. 😎
+Welcome to the **Pwnagotchi Configuration Guide**! This `README.md` explains every option in the Pwnagotchi configuration file (`/etc/pwnagotchi/config.toml`). Whether you're a newbie or a pro, this guide makes it easy to customize your Wi-Fi hacking buddy. 😎
 
 > **New to Pwnagotchi?** Pwnagotchi is a DIY device that learns to capture Wi-Fi handshakes. This file controls its behavior, plugins, and display. Let’s dive in! 🛠️
 
