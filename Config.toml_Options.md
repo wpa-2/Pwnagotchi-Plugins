@@ -26,7 +26,7 @@ The `[main]` section sets up the core of your Pwnagotchi. Think of it as the bra
 |---------|-------------|---------|---------|
 | **name** | Your Pwnagotchi’s name, shown on the screen and for identification. | `pwnagotchi` | `name = "MyPwnagotchi"` |
 | **lang** | Language for the interface (e.g., `en` for English, `es` for Spanish). | `en` | `lang = "es"` |
-| **iface** | Wi-Fi interface for monitoring traffic (must be in monitor mode). | `wlan0mon` | `iface = "wlan1mon"` |
+| **iface** | Wi-Fi interface for monitoring traffic (must be in monitor mode). | `wlan0mon` | `iface = "wlan0mon"` |
 | **mon_start_cmd** | Command to start monitor mode on the interface. | `/usr/bin/monstart` | `/usr/local/bin/start_monitor.sh` |
 | **mon_stop_cmd** | Command to stop monitor mode. | `/usr/bin/monstop` | `/usr/local/bin/stop_monitor.sh` |
 | **mon_max_blind_epochs** | Max cycles without detecting networks before restarting. | `5` | `10` |
