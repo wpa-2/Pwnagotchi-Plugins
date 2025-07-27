@@ -77,6 +77,7 @@ Shares internet via Bluetooth.
 - **dns**: DNS servers (space-separated). Default: `8.8.8.8 1.1.1.1`.
 
 ### 🛠️ Fix Services
+This is for External wifi adaptors only. 
 Ensures critical services are running.
 - **enabled**: Turn on/off. Default: `true`.
 
