@@ -6,7 +6,7 @@ A curated collection of powerful plugins designed to enhance your Pwnagotchi exp
 
 ## 🔌 Universal Installation
 
-1.  **Download:** Click on the `.py` file you want (e.g., `wireguard.py`, `auto_backup.py`) from the file list above.
+1.  **Download:** Click on the `.py` file you want (e.g., `wireguard.py`, `discord.py`) from the file list above.
 2.  **Install:** Move the file to your Pwnagotchi's custom plugin directory: `/usr/local/share/pwnagotchi/custom-plugins/`.
 3.  **Configure:** Edit your `/etc/pwnagotchi/config.toml` file to include the settings listed below.
 4.  **Activate:** Restart your Pwnagotchi:
@@ -21,10 +21,10 @@ A curated collection of powerful plugins designed to enhance your Pwnagotchi exp
 | Plugin | Description | Setup Guide |
 | :--- | :--- | :--- |
 | **🛡️ AutoBackup** | **v2.0** - Automated backups with retention policy (garbage collection). | [Scroll Down](#autobackup) |
+| **🔔 Discord** | **v2.5.0** - Uploads **.pcap files**, maps locations, and tracks sessions without lag. | [Scroll Down](#discord) |
 | **🔒 Pwny-WG** | Connect to home **WireGuard VPN** and sync handshakes automatically via SSH. | [View Guide](./Pwny-WG/README.md) |
 | **🦎 Pwny-Tailscale** | Easy **Tailscale** integration for remote access without port forwarding. | [View Guide](./Pwny-Tailscale/README.md) |
 | **📡 Tele_Pi** | Telegram control and notifications for your Pwnagotchi. | [View Guide](./Tele_Pi/README.md) |
-| **🔔 Discord** | Get instant notifications about your Pwnagotchi's conquests via Discord. | [Scroll Down](#discord) |
 | **🌐 web2ssh** | A lightweight web interface for executing shell commands from your browser. | [Scroll Down](#web2ssh) |
 | **📍 WigleLocator** | Automatically queries WiGLE to find GPS coordinates for handshakes. | [Scroll Down](#wiglelocator) |
 
@@ -68,17 +68,25 @@ sudo tar xzf /home/pi/backups/YOUR_BACKUP_FILENAME.tar.gz -C /
 ---
 
 <a name="discord"></a>
-## 🔔 Discord: Your Pwnage Newsfeed
+## 🔔 Discord: The Ultimate Exfiltration Tool
+*(Updated to v2.5.0 - High Performance)*
 
-Get instant, beautifully formatted notifications about your Pwnagotchi's conquests sent directly to your Discord channel! This plugin leverages the WiGLE API to enrich handshake alerts with GPS coordinates.
+Get instant, beautifully formatted notifications about your Pwnagotchi's conquests via Discord. 
+
+**New in v2.5.0:**
+* **📁 Automatic Exfiltration:** The plugin now **uploads the captured `.pcap` file directly to Discord**. You can download and crack handshakes immediately—no SSH required.
+* **⚡ Zero-Lag Queue:** Uses a threaded background worker to prevent the Pwnagotchi from freezing or slowing down during captures. Perfect for high-speed scanning.
+* **📍 Intelligence:** Enriches alerts with direct Google Maps links via WiGLE.
+* **📊 Session Tracking:** Reports uptime and handshake counts when the session starts and ends.
 
 ### ⚙️ Configuration
 ```toml
 [main.plugins.discord]
 enabled = true
 webhook_url = "YOUR_DISCORD_WEBHOOK_URL"
-wigle_api_key = "ENCODED_API_KEY"
+wigle_api_key = "ENCODED_API_KEY" 
 ```
+*Note: `wigle_api_key` must be the Base64 encoded string of `Username:Token`.*
 
 ---
 
@@ -114,7 +122,9 @@ port = 8082
 <a name="wiglelocator"></a>
 ## 📍 WigleLocator: Pinpoint Your Pwns
 
-The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from.
+The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from. 
+
+*(Note: The Discord plugin v2.5.0 now handles its own lookups, but this plugin is useful if you want to save GPS data locally without Discord.)*
 
 ### ⚙️ Configuration
 ```toml
