@@ -1,47 +1,53 @@
 # 🚀 Pwnagotchi Power-Up Plugins
 
-A curated collection of powerful plugins designed to enhance your Pwnagotchi experience. These tools add functionality ranging from remote command execution and automated backups to rich Discord notifications with GPS data. Supercharge your Pwnagotchi and make it an even more formidable (and convenient) Wi-Fi companion!
+A curated collection of powerful plugins designed to enhance your Pwnagotchi experience. These tools add functionality ranging from remote command execution and automated backups to rich Discord notifications and VPN connectivity. Supercharge your Pwnagotchi and make it an even more formidable (and convenient) Wi-Fi companion!
 
 ---
 
-## 📋 Table of Contents
+## 📋 Quick Menu
 
-- [🛡️ **AutoBackup**](#️-autobackup-your-digital-guardian)
-- [🔔 **Discord**](#-discord-your-pwnage-newsfeed)
-- [🌐 **web2ssh**](#-web2ssh-command-center-in-your-browser)
-- [📍 **WigleLocator**](#-wiglelocator-pinpoint-your-pwns)
+| Plugin | Description | Setup Guide |
+| :--- | :--- | :--- |
+| **🛡️ AutoBackup** | **v2.0** - Automated backups with retention policy (garbage collection). | [Scroll Down](#-autobackup-your-digital-guardian) |
+| **🔒 Pwny-WG** | Connect to home **WireGuard VPN** and sync handshakes automatically via SSH. | [View Guide](./Pwny-WG/README.md) |
+| **🦎 Pwny-Tailscale** | Easy **Tailscale** integration for remote access without port forwarding. | [View Guide](./Pwny-Tailscale/README.md) |
+| **📡 Tele_Pi** | Telegram control and notifications for your Pwnagotchi. | [View Guide](./Tele_Pi/README.md) |
+| **🔔 Discord** | Get instant notifications about your Pwnagotchi's conquests via Discord. | [Scroll Down](#-discord-your-pwnage-newsfeed) |
+| **🌐 web2ssh** | A lightweight web interface for executing shell commands from your browser. | [Scroll Down](#-web2ssh-command-center-in-your-browser) |
+| **📍 WigleLocator** | Automatically queries WiGLE to find GPS coordinates for handshakes. | [Scroll Down](#-wiglelocator-pinpoint-your-pwns) |
 
 ---
 
 ## 🔌 Universal Installation
 
-1.  Download the plugin files (e.g., `auto_backup.py`, `discord.py`, etc.).
+1.  Download the plugin files from their respective folders.
 2.  Move the plugin files to your Pwnagotchi's custom plugin directory: `/usr/local/share/pwnagotchi/custom-plugins/`.
-3.  Edit your `/etc/pwnagotchi/config.toml` file to include the configuration for each plugin you wish to enable. See the specific instructions for each plugin below.
-4.  Restart your Pwnagotchi to apply the changes.
+3.  Edit your `/etc/pwnagotchi/config.toml` file to include the configuration for each plugin you wish to enable.
+4.  Restart your Pwnagotchi to apply the changes:
+    ```bash
+    sudo systemctl restart pwnagotchi
+    ```
 
 ---
 
 ## 🛡️ AutoBackup: Your Digital Guardian
+*(Updated to v2.0 - Now with Garbage Collection!)*
 
-Keep your handshakes, settings, and other critical files safe! The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of your specified files and directories whenever an internet connection is available.
+Keep your handshakes, settings, and other critical files safe! The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of your specified files whenever an internet connection is available.
 
 ### Why It's Awesome:
--   **🛡️ Automatic & Secure**: Set it and forget it. Backups run automatically when online, creating compressed and safe archives.
--   **🕒 Flexible Intervals**: Configure backups to run hourly, daily, or at any custom minute interval.
--   **🧠 Smart & Efficient**: Only backs up files that actually exist and allows you to exclude unnecessary data like logs and temp files.
+-   **🛡️ Automatic & Secure**: Backups run automatically when online.
+-   **🧹 Smart Retention**: **(New in v2.0)** Automatically deletes old backups to prevent your SD card from filling up.
+-   **🧠 Efficient**: Only backs up files that actually exist and allows exclusions.
 
 ### ⚙️ Configuration
-
-Pwnagotchi's `config.toml` supports two configuration formats. The modern "New Style" is recommended, but the "Old Style" also works.
-
-#### New Style (Recommended)
 ```toml
 [main.plugins.auto_backup]
 enabled = true
-interval = "60"
+interval = "daily" # Options: "hourly", "daily", or minutes (e.g., "60")
 max_tries = 0
-backup_location = "/home/pi/"
+backup_location = "/home/pi/backups/"
+max_backups_to_keep = 5 # Keeps the 5 newest files, deletes the rest
 files = [
  "/root/settings.yaml",
  "/root/client_secrets.json",
@@ -51,7 +57,7 @@ files = [
  "/root/.profile",
  "/home/pi/handshakes",
  "/root/peers",
- "/etc/pwnagotchi/",
+ "/etc/pwnagotchi/config.toml",
  "/usr/local/share/pwnagotchi/custom-plugins",
  "/etc/ssh/",
  "/home/pi/.bashrc",
@@ -61,45 +67,14 @@ files = [
 exclude = [
   "/etc/pwnagotchi/logs/*",
   "*.bak",
-  "*.tmp",
-]
-```
-
-#### Old Style
-```toml
-main.plugins.auto_backup.enabled = true
-main.plugins.auto_backup.interval = "60"
-main.plugins.auto_backup.max_tries = 3
-main.plugins.auto_backup.backup_location = "/home/pi/"
-main.plugins.auto_backup.files = [
- "/root/settings.yaml",
- "/root/client_secrets.json",
- "/root/.api-report.json",
- "/root/.ssh",
- "/root/.bashrc",
- "/root/.profile",
- "/home/pi/handshakes",
- "/root/peers",
- "/etc/pwnagotchi/",
- "/usr/local/share/pwnagotchi/custom-plugins",
- "/etc/ssh/",
- "/home/pi/.bashrc",
- "/home/pi/.profile",
- "/home/pi/.wpa_sec_uploads",
-]
-main.plugins.auto_backup.exclude = [
- "/etc/pwnagotchi/logs/*",
- "*.bak",
- "*.tmp",
+  "*.tmp"
 ]
 ```
 
 ### 🚀 Restore Command
-
 After a fresh flash, you can easily restore your files with this command:
-
 ```bash
-sudo tar xzf /home/pi/NAME-backup.tar.gz -C /
+sudo tar xzf /home/pi/backups/YOUR_BACKUP_FILENAME.tar.gz -C /
 ```
 
 ---
@@ -109,54 +84,41 @@ sudo tar xzf /home/pi/NAME-backup.tar.gz -C /
 Get instant, beautifully formatted notifications about your Pwnagotchi's conquests sent directly to your Discord channel! This plugin leverages the WiGLE API to enrich handshake alerts with GPS coordinates.
 
 ### Why It's Awesome:
--   **🛰️ GPS-Enriched Alerts**: Automatically fetches and includes the latitude and longitude of the access point using WiGLE.
--   **🧠 Smart Caching**: Reduces redundant API calls by keeping a local cache of WiGLE lookups, saving data and time.
--   **💬 Instant Notifications**: Get notified in real-time on your Discord server the moment a new handshake is captured.
+-   **🛰️ GPS-Enriched Alerts**: Automatically fetches latitude and longitude using WiGLE.
+-   **🧠 Smart Caching**: Reduces redundant API calls.
+-   **💬 Instant Notifications**: Get notified in real-time on your Discord server.
 
 ### ⚙️ Configuration
-
-Add this to your `/etc/pwnagotchi/config.toml`:
-
 ```toml
 [main.plugins.discord]
 enabled = true
 webhook_url = "YOUR_DISCORD_CHANNEL_WEB_HOOK_URL"
-wigle_api_key = "ENCODED FOR USE API KEY "
-```
-```Old Stle
-main.plugins.discord.enabled = true
-main.plugins.discord.webhook_url = ""
-main.plugins.discord.wigle_api_key = ""
+wigle_api_key = "ENCODED_WIGLE_API_KEY"
 ```
 
 ---
 
 ## 🌐 web2ssh: Command Center in Your Browser
 
-Control your Pwnagotchi from anywhere on your network! **web2ssh** provides a lightweight, password-protected web interface for executing shell commands directly from your browser. No need to `ssh` in for a quick reboot or to check a file.
+Control your Pwnagotchi from anywhere on your network! **web2ssh** provides a lightweight, password-protected web interface for executing shell commands directly from your browser. No need to `ssh` in for a quick reboot.
 
 ### Why It's Awesome:
--   **🖥️ Browser-Based Control**: Execute any shell command from a simple web page.
--   **👆 One-Click Shortcuts**: Pre-configured buttons for common actions like `reboot`, `shutdown`, `ping`, and more.
--   **🔒 Secure Access**: Protected by basic authentication to keep your device secure.
--   **📱 Mobile Friendly**: A clean, responsive UI that works on both desktop and mobile browsers.
+-   **🖥️ Browser-Based Control**: Execute shell commands from a simple web page.
+-   **👆 One-Click Shortcuts**: Buttons for `reboot`, `shutdown`, `ping`, etc.
+-   **🔒 Secure Access**: Protected by basic authentication.
+-   **📱 Mobile Friendly**: Works great on phones.
 
 ### 🚨 Special Dependency
-
-This plugin requires **Flask**. You must install it on your Pwnagotchi by running:
+This plugin requires **Flask**. Install it by running:
 ```bash
-sudo apt update
-sudo apt install python3-flask
+sudo apt update && sudo apt install python3-flask
 ```
 
 ### ⚙️ Configuration
-
-Add this to your `/etc/pwnagotchi/config.toml`:
-
 ```toml
 [main.plugins.web2ssh]
 enabled = true
-username = "changeme"
+username = "admin"
 password = "changeme"
 port = 8082
 ```
@@ -173,18 +135,16 @@ port = 8082
 
 ## 📍 WigleLocator: Pinpoint Your Pwns
 
-Know where you've been. The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from. This data is then saved to a local text file.
+Know where you've been. The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from.
 
 ### Why It's Awesome:
--   **🗺️ Automatic Geolocation**: Fetches location data (latitude and longitude) for each handshake.
--   **✍️ Local Data Storage**: Saves location information in a simple `.txt` file named after the network's ESSID.
+-   **🗺️ Automatic Geolocation**: Fetches location data for each handshake.
+-   **✍️ Local Data Storage**: Saves location information in a simple `.txt` file.
 -   **📺 On-Screen Display**: Shows the found coordinates directly on your Pwnagotchi's display.
 
 ### ⚙️ Configuration
-
-Add this to your `/etc/pwnagotchi/config.toml`:
-
 ```toml
 [main.plugins.wiglelocator]
 enabled = true
-api_key = "ENCODED FOR USE API KEY "
+api_key = "ENCODED_WIGLE_API_KEY"
+```
