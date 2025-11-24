@@ -20,10 +20,10 @@ A curated collection of powerful plugins designed to enhance your Pwnagotchi exp
 
 ## 🔌 Universal Installation
 
-1.  Download the plugin files from their respective folders.
-2.  Move the plugin files to your Pwnagotchi's custom plugin directory: `/usr/local/share/pwnagotchi/custom-plugins/`.
-3.  Edit your `/etc/pwnagotchi/config.toml` file to include the configuration for each plugin you wish to enable.
-4.  Restart your Pwnagotchi to apply the changes:
+1.  **Download:** Click on the `.py` file you want (e.g., `wireguard.py`, `auto_backup.py`) from the file list above.
+2.  **Install:** Move the file to your Pwnagotchi's custom plugin directory: `/usr/local/share/pwnagotchi/custom-plugins/`.
+3.  **Configure:** Edit your `/etc/pwnagotchi/config.toml` file to include the settings listed below.
+4.  **Activate:** Restart your Pwnagotchi:
     ```bash
     sudo systemctl restart pwnagotchi
     ```
@@ -33,12 +33,7 @@ A curated collection of powerful plugins designed to enhance your Pwnagotchi exp
 ## 🛡️ AutoBackup: Your Digital Guardian
 *(Updated to v2.0 - Now with Garbage Collection!)*
 
-Keep your handshakes, settings, and other critical files safe! The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of your specified files whenever an internet connection is available.
-
-### Why It's Awesome:
--   **🛡️ Automatic & Secure**: Backups run automatically when online.
--   **🧹 Smart Retention**: **(New in v2.0)** Automatically deletes old backups to prevent your SD card from filling up.
--   **🧠 Efficient**: Only backs up files that actually exist and allows exclusions.
+The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of your specified files whenever an internet connection is available. It features a smart retention policy to delete old backups so your SD card never fills up.
 
 ### ⚙️ Configuration
 ```toml
@@ -51,28 +46,20 @@ max_backups_to_keep = 5 # Keeps the 5 newest files, deletes the rest
 files = [
  "/root/settings.yaml",
  "/root/client_secrets.json",
- "/root/.api-report.json",
  "/root/.ssh",
- "/root/.bashrc",
- "/root/.profile",
  "/home/pi/handshakes",
- "/root/peers",
  "/etc/pwnagotchi/config.toml",
- "/usr/local/share/pwnagotchi/custom-plugins",
- "/etc/ssh/",
- "/home/pi/.bashrc",
- "/home/pi/.profile",
- "/home/pi/.wpa_sec_uploads"
+ "/usr/local/share/pwnagotchi/custom-plugins"
 ]
 exclude = [
-  "/etc/pwnagotchi/logs/*",
+  "*.tmp",
   "*.bak",
-  "*.tmp"
+  "/etc/pwnagotchi/logs/*"
 ]
 ```
 
 ### 🚀 Restore Command
-After a fresh flash, you can easily restore your files with this command:
+To restore files after a fresh flash:
 ```bash
 sudo tar xzf /home/pi/backups/YOUR_BACKUP_FILENAME.tar.gz -C /
 ```
@@ -83,33 +70,21 @@ sudo tar xzf /home/pi/backups/YOUR_BACKUP_FILENAME.tar.gz -C /
 
 Get instant, beautifully formatted notifications about your Pwnagotchi's conquests sent directly to your Discord channel! This plugin leverages the WiGLE API to enrich handshake alerts with GPS coordinates.
 
-### Why It's Awesome:
--   **🛰️ GPS-Enriched Alerts**: Automatically fetches latitude and longitude using WiGLE.
--   **🧠 Smart Caching**: Reduces redundant API calls.
--   **💬 Instant Notifications**: Get notified in real-time on your Discord server.
-
 ### ⚙️ Configuration
 ```toml
 [main.plugins.discord]
 enabled = true
-webhook_url = "YOUR_DISCORD_CHANNEL_WEB_HOOK_URL"
-wigle_api_key = "ENCODED_WIGLE_API_KEY"
+webhook_url = "YOUR_DISCORD_WEBHOOK_URL"
+wigle_api_key = "ENCODED_API_KEY"
 ```
 
 ---
 
 ## 🌐 web2ssh: Command Center in Your Browser
 
-Control your Pwnagotchi from anywhere on your network! **web2ssh** provides a lightweight, password-protected web interface for executing shell commands directly from your browser. No need to `ssh` in for a quick reboot.
+Control your Pwnagotchi from anywhere on your network! **web2ssh** provides a lightweight, password-protected web interface for executing shell commands directly from your browser.
 
-### Why It's Awesome:
--   **🖥️ Browser-Based Control**: Execute shell commands from a simple web page.
--   **👆 One-Click Shortcuts**: Buttons for `reboot`, `shutdown`, `ping`, etc.
--   **🔒 Secure Access**: Protected by basic authentication.
--   **📱 Mobile Friendly**: Works great on phones.
-
-### 🚨 Special Dependency
-This plugin requires **Flask**. Install it by running:
+**Requirement:** You must install Flask first:
 ```bash
 sudo apt update && sudo apt install python3-flask
 ```
@@ -135,16 +110,11 @@ port = 8082
 
 ## 📍 WigleLocator: Pinpoint Your Pwns
 
-Know where you've been. The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from.
-
-### Why It's Awesome:
--   **🗺️ Automatic Geolocation**: Fetches location data for each handshake.
--   **✍️ Local Data Storage**: Saves location information in a simple `.txt` file.
--   **📺 On-Screen Display**: Shows the found coordinates directly on your Pwnagotchi's display.
+The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from.
 
 ### ⚙️ Configuration
 ```toml
 [main.plugins.wiglelocator]
 enabled = true
-api_key = "ENCODED_WIGLE_API_KEY"
+api_key = "ENCODED_API_KEY"
 ```
