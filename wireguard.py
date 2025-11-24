@@ -11,9 +11,9 @@ from pwnagotchi.ui.view import BLACK
 
 class WireGuard(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.8'
+    __version__ = '1.9'
     __license__ = 'GPL3'
-    __description__ = 'Connects to WireGuard and syncs ONLY new handshakes (Gapless).'
+    __description__ = 'VPN Sync: Full backup on first run, then incremental only.'
 
     def __init__(self):
         self.ready = False
@@ -50,13 +50,20 @@ class WireGuard(plugins.Plugin):
             except:
                 self.options['server_vpn_ip'] = "10.0.0.1" 
 
-        # Create the marker file if it doesn't exist yet (First run behavior)
+        # --- CHECKPOINT LOGIC ---
+        # If marker doesn't exist, this is a fresh install.
         if not os.path.exists(self.marker_file):
-            # We create it with the CURRENT timestamp. 
-            # This assumes your old 570MB is already backed up (which we verified).
-            # It will start tracking NEW files from this moment forward.
-            with open(self.marker_file, 'a'):
-                os.utime(self.marker_file, None)
+            try:
+                # Create the file
+                with open(self.marker_file, 'a'):
+                    pass
+                # Set timestamp to Epoch (1970). 
+                # This ensures the "find -newer" command catches ALL historical files on the first run.
+                os.utime(self.marker_file, (0, 0))
+                logging.info("[WireGuard] First run detected. Full sync scheduled.")
+            except Exception as e:
+                logging.error(f"[WireGuard] Marker creation failed: {e}")
+        # ------------------------
 
         self.ready = True
         logging.info("[WireGuard] Plugin loaded. Checkpoint system active.")
@@ -188,7 +195,7 @@ PersistentKeepalive = 25
                 # If nothing new, we are done. Fast exit.
                 if os.path.getsize(file_list_path) == 0:
                     self.last_sync_time = time.time()
-                    return # Silent exit, no spam
+                    return 
                     
             except Exception as e:
                 logging.error(f"[WireGuard] List Gen Error: {e}")
