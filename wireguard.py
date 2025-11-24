@@ -11,9 +11,9 @@ from pwnagotchi.ui.view import BLACK
 
 class WireGuard(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.5'
+    __version__ = '1.8'
     __license__ = 'GPL3'
-    __description__ = 'Connects to WireGuard and syncs handshakes via custom SSH port.'
+    __description__ = 'Connects to WireGuard and syncs ONLY new handshakes (Gapless).'
 
     def __init__(self):
         self.ready = False
@@ -23,6 +23,8 @@ class WireGuard(plugins.Plugin):
         self.sync_interval = 600
         self.initial_boot = True
         self.lock = threading.Lock()
+        # This file acts as the "Bookmark". We only sync files newer than this file.
+        self.marker_file = "/root/.wg_last_sync_marker"
 
     def on_loaded(self):
         required_ops = ['private_key', 'address', 'peer_public_key', 'peer_endpoint', 'handshake_dir', 'server_user']
@@ -39,8 +41,25 @@ class WireGuard(plugins.Plugin):
         self.options.setdefault('startup_delay_secs', 60)
         self.options.setdefault('server_port', 22)
         
+        # Calculate server VPN IP (assume .1 if not specified)
+        if 'server_vpn_ip' not in self.options:
+            try:
+                ip_part = self.options['address'].split('/')[0]
+                base_ip = ".".join(ip_part.split('.')[:3]) + ".1"
+                self.options['server_vpn_ip'] = base_ip
+            except:
+                self.options['server_vpn_ip'] = "10.0.0.1" 
+
+        # Create the marker file if it doesn't exist yet (First run behavior)
+        if not os.path.exists(self.marker_file):
+            # We create it with the CURRENT timestamp. 
+            # This assumes your old 570MB is already backed up (which we verified).
+            # It will start tracking NEW files from this moment forward.
+            with open(self.marker_file, 'a'):
+                os.utime(self.marker_file, None)
+
         self.ready = True
-        logging.info("[WireGuard] Plugin loaded and ready.")
+        logging.info("[WireGuard] Plugin loaded. Checkpoint system active.")
 
     def on_ui_setup(self, ui):
         self.ui = ui
@@ -65,12 +84,15 @@ class WireGuard(plugins.Plugin):
                 pass
 
     def _cleanup_interface(self):
-        subprocess.run(["wg-quick", "down", self.wg_config_path], 
-                       stdout=subprocess.DEVNULL, 
-                       stderr=subprocess.DEVNULL)
-        subprocess.run(["ip", "link", "delete", "dev", "wg0"], 
-                       stdout=subprocess.DEVNULL, 
-                       stderr=subprocess.DEVNULL)
+        try:
+            subprocess.run(["wg-quick", "down", self.wg_config_path], 
+                           stdout=subprocess.DEVNULL, 
+                           stderr=subprocess.DEVNULL)
+            subprocess.run(["ip", "link", "delete", "dev", "wg0"], 
+                           stdout=subprocess.DEVNULL, 
+                           stderr=subprocess.DEVNULL)
+        except:
+            pass
 
     def _connect(self):
         if self.lock.locked():
@@ -80,8 +102,6 @@ class WireGuard(plugins.Plugin):
         self.update_status("Conn...")
 
         self._cleanup_interface()
-
-        server_vpn_ip = ".".join(self.options['address'].split('.')[:3]) + ".1"
 
         conf = f"""[Interface]
 PrivateKey = {self.options['private_key']}
@@ -94,7 +114,7 @@ Address = {self.options['address']}
 [Peer]
 PublicKey = {self.options['peer_public_key']}
 Endpoint = {self.options['peer_endpoint']}
-AllowedIPs = {server_vpn_ip}/32
+AllowedIPs = {self.options['server_vpn_ip']}/32
 PersistentKeepalive = 25
 """
         if 'preshared_key' in self.options:
@@ -126,50 +146,89 @@ PersistentKeepalive = 25
             logging.error(f"[WireGuard] Critical Error: {e}")
             return False
 
+    def _get_ssh_key_path(self):
+        if os.path.exists("/root/.ssh/id_ed25519"):
+            return "/root/.ssh/id_ed25519"
+        elif os.path.exists("/root/.ssh/id_rsa"):
+            return "/root/.ssh/id_rsa"
+        return None
+
     def _sync_handshakes(self):
         with self.lock:
-            logging.info("[WireGuard] Starting handshake sync...")
-            
             source_dir = '/home/pi/handshakes/'
+            if not os.path.exists(source_dir):
+                source_dir = '/root/handshakes/'
+            
             remote_dir = self.options['handshake_dir']
             server_user = self.options['server_user']
-            server_vpn_ip = ".".join(self.options['address'].split('.')[:3]) + ".1"
+            server_ip = self.options['server_vpn_ip']
             ssh_port = self.options['server_port']
             
             if not os.path.exists(source_dir):
                 return
 
-            # Explicitly force id_ed25519 key
-            ssh_cmd = f"ssh -p {ssh_port} -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
+            key_path = self._get_ssh_key_path()
+            if not key_path:
+                self.update_status("KeyErr")
+                return
+
+            # --- GAPLESS SYNC LOGIC ---
+            # 1. We create a list of files that are NEWER than our marker file.
+            file_list_path = "/tmp/wg_sync_list.txt"
+            
+            # Use 'find' with -newer. This is instant.
+            # It finds everything captured since the last successful sync.
+            try:
+                with open(file_list_path, "w") as f:
+                    subprocess.run(
+                        ["find", source_dir, "-type", "f", "-newer", self.marker_file, "-printf", "%P\\n"], 
+                        stdout=f
+                    )
+                
+                # If nothing new, we are done. Fast exit.
+                if os.path.getsize(file_list_path) == 0:
+                    self.last_sync_time = time.time()
+                    return # Silent exit, no spam
+                    
+            except Exception as e:
+                logging.error(f"[WireGuard] List Gen Error: {e}")
+                return
+            # --- END LOGIC ---
+
+            logging.info("[WireGuard] Syncing new handshakes...")
+            ssh_cmd = f"ssh -p {ssh_port} -i {key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
             
             command = [
-                "rsync", "-avz", "--stats", "--timeout=20",
+                "rsync", "-avz", "--timeout=30",
+                "--files-from=" + file_list_path,
                 "-e", ssh_cmd,
                 source_dir,
-                f"{server_user}@{server_vpn_ip}:{remote_dir}"
+                f"{server_user}@{server_ip}:{remote_dir}"
             ]
 
             try:
                 result = subprocess.run(command, capture_output=True, text=True)
                 
                 if result.returncode == 0:
-                    new_files = 0
-                    for line in result.stdout.splitlines():
-                        if "Number of created files:" in line:
-                            try:
-                                parts = line.split(":")
-                                if len(parts) > 1:
-                                    new_files = int(parts[1].strip().split()[0])
-                            except: pass
+                    # SUCCESS: Update the marker to NOW so we don't sync these files again
+                    os.utime(self.marker_file, None)
                     
-                    msg = f"Sync: {new_files}"
+                    try:
+                        with open(file_list_path, 'r') as f:
+                            count = sum(1 for _ in f)
+                        msg = f"Sync: {count}"
+                    except:
+                        msg = "Sync: OK"
+
                     self.update_status(msg)
-                    if new_files > 0:
-                        logging.info(f"[WireGuard] Transferred {new_files} handshakes.")
+                    if count > 0:
+                        logging.info(f"[WireGuard] Synced {count} new handshakes.")
                     
                     threading.Timer(10.0, self.update_status, ["Up"]).start()
                 else:
-                    logging.error(f"[WireGuard] Sync Error: {result.stderr}")
+                    if result.returncode not in [23, 24]:
+                        logging.error(f"[WireGuard] Sync Error: {result.stderr}")
+                    
                     if "Connection refused" in result.stderr or "unreachable" in result.stderr:
                          logging.warning("[WireGuard] Connection appears dead. Resetting...")
                          self.update_status("Down")
@@ -191,12 +250,9 @@ PersistentKeepalive = 25
             time.sleep(delay)
             self.initial_boot = False
         
-        # FIX: Only connect if we are definitely DOWN, ERROR, or Initializing
-        # Do NOT connect if we are "Up" or currently "Sync: X"
         if self.status in ["Init", "Down", "Err"]:
             self._connect()
         
-        # Trigger sync if Up OR currently Syncing (to allow retries if logic permits)
         elif self.status == "Up" or self.status.startswith("Sync"):
             if self.lock.locked():
                 return 
