@@ -41,11 +41,12 @@ On your WireGuard server, create a new client profile for your Pwnagotchi.
 
 ### Step 2: Pwnagotchi Dependency Installation
 
-Log into your Pwnagotchi via SSH and install `rsync`.
+Log into your Pwnagotchi via SSH and install the required system tools. **This is critical**; without these, the plugin will crash.
 
 ```bash
 sudo apt-get update
-sudo apt-get install rsync
+# Install rsync (for syncing) and WireGuard tools (for the connection)
+sudo apt-get install rsync wireguard wireguard-tools openresolv -y
 ```
 
 ---
@@ -183,6 +184,7 @@ To access your Pwnagotchi from your home network or from other VPN clients (like
 
 ### Troubleshooting
 
+* **`[Errno 2] No such file or directory: 'wg-quick'`:** You missed **Step 2**. The system does not have the WireGuard tools installed. Run `sudo apt install wireguard wireguard-tools` on the Pwnagotchi.
 * **`Permission denied (publickey)` in logs:** The SSH key setup is incorrect. Ensure you generated the key using `sudo` (for root) or copied your `pi` keys to `/root/.ssh/`.
 * **`Connection timed out`:** A network or firewall issue. Verify both devices are connected to the VPN (`sudo wg show`). Check the server firewall rules from Step 6.
 * **`Sync Failed` on screen:** Usually a permission issue on the server. Make sure the `server_user` has permission to write to the `handshake_dir`.
