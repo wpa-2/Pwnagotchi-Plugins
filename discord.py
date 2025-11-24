@@ -4,7 +4,6 @@ import os
 import time
 import threading
 import queue
-from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -12,7 +11,6 @@ from requests import RequestException
 
 import pwnagotchi.plugins as plugins
 from pwnagotchi.agent import Agent
-from pwnagotchi.voice import Voice
 
 # ----------------------------------------------------------------------------
 # Constants
@@ -20,12 +18,10 @@ from pwnagotchi.voice import Voice
 LOG_DIR = "/etc/pwnagotchi/log"
 LOG_FILE = os.path.join(LOG_DIR, "discord_plugin.log")
 CACHE_FILE = "/home/pi/handshakes/discord_wigle_cache.json"
-SCREENSHOT_FILE = "/var/tmp/pwnagotchi/discord_status.png"
 
 # Ensure directories exist
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-os.makedirs(os.path.dirname(SCREENSHOT_FILE), exist_ok=True)
 
 # ----------------------------------------------------------------------------
 # Logging Setup
@@ -44,16 +40,14 @@ logger.addHandler(file_handler)
 
 class Discord(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = '2.6.0'
+    __version__ = '2.5.0'
     __license__ = 'GPL3'
-    __description__ = 'Sends handshakes (pcap), status (screen capture), and stats to Discord. Threaded & Queued.'
+    __description__ = 'Sends Pwnagotchi handshakes (w/ pcap) and status to Discord. Uses a queue to prevent rate limits.'
 
     def __init__(self):
         super().__init__()
         self.webhook_url: Optional[str] = None
         self.api_key: Optional[str] = None
-        self.status_interval_minutes: int = 60  # Default to hourly updates
-        
         self.http_session = requests.Session()
         self.wigle_cache: Dict[str, Dict[str, str]] = {}
         
@@ -61,30 +55,27 @@ class Discord(plugins.Plugin):
         self.recent_handshakes = set()
         self.recent_handshakes_limit = 200
 
-        # Threading & Queue
+        # Threading & Queue for Rate Limit Protection
         self._event_queue = queue.Queue()
         self._stop_event = threading.Event()
         self._worker_thread = None
 
-        # Session Data
+        # Session Stats
         self.session_handshakes = 0
         self.start_time = time.time()
-        self.last_status_time = time.time()
-        self.session_id = os.urandom(4).hex()
         
-        # Reference to agent for screen capture
-        self._agent = None
+        # Generate a random 8-char Session ID for this run
+        self.session_id = os.urandom(4).hex()
 
     def on_loaded(self):
         logger.info("Discord plugin loaded.")
         self.webhook_url = self.options.get("webhook_url", None)
         self.api_key = self.options.get("wigle_api_key", None)
-        self.status_interval_minutes = self.options.get("status_interval", 60)
 
         self._load_wigle_cache()
 
-        if not self.webhook_url:
-            logger.error("Discord plugin: Missing webhook_url.")
+        if not self.webhook_url or not self.api_key:
+            logger.error("Discord plugin: Missing webhook_url or wigle_api_key.")
             return
 
         # Start the background worker
@@ -94,8 +85,10 @@ class Discord(plugins.Plugin):
         logger.info(f"Discord plugin: Worker thread started. Session ID: {self.session_id}")
 
     def on_unload(self, ui):
-        logger.info("Discord plugin: Unloading.")
+        logger.info("Discord plugin: Unloading. Saving cache and stopping worker.")
         self._save_wigle_cache()
+        
+        # Stop the worker
         self._stop_event.set()
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=2.0)
@@ -105,12 +98,13 @@ class Discord(plugins.Plugin):
     # ------------------------------------------------------------------------
 
     def on_ready(self, agent: Agent):
-        self._agent = agent
         self.start_time = time.time()
-        self.last_status_time = time.time()
         logger.info("Discord plugin: Pwnagotchi is ready.")
         
-        unit_name = self._get_unit_name(agent)
+        try:
+            unit_name = agent.config()['main']['name']
+        except:
+            unit_name = "Pwnagotchi"
 
         self.queue_notification(
             content="🟢 **Pwnagotchi is Online!**",
@@ -141,128 +135,61 @@ class Discord(plugins.Plugin):
             'access_point': access_point,
             'client_station': client_station
         })
+        logger.debug(f"Discord plugin: Queued handshake for {bssid}")
 
     def on_session_stop(self, agent: Agent, session: Any):
         logger.info("Discord plugin: Session stop detected.")
-        # Trigger a final status update with screenshot
-        self._capture_and_queue_status(agent, final=True)
+        
+        # Calculate duration
+        duration_sec = int(time.time() - self.start_time)
+        m, s = divmod(duration_sec, 60)
+        h, m = divmod(m, 60)
+        duration_str = f"{h}h {m}m {s}s"
+
+        self.queue_notification(
+            content="💤 **Pwnagotchi is entering sleep mode.**",
+            embed={
+                'title': 'Session Ended',
+                'description': (f"**Handshakes:** {self.session_handshakes}\n"
+                                f"**Duration:** {duration_str}\n"
+                                f"**Session ID:** `{self.session_id}`"),
+                'color': 15548997 # Red
+            }
+        )
+        self.session_handshakes = 0
         self._save_wigle_cache()
 
     # ------------------------------------------------------------------------
-    # Worker Logic (The Brain)
+    # Worker Logic
     # ------------------------------------------------------------------------
 
     def _worker_loop(self):
         while not self._stop_event.is_set():
-            # 1. Check for Queue Items
             try:
                 event = self._event_queue.get(timeout=1.0)
             except queue.Empty:
-                event = None
+                continue
 
-            if event:
-                try:
-                    if event.get('type') == 'handshake':
-                        self._process_handshake(event)
-                    elif event.get('type') == 'notification':
-                        self._send_discord_payload(
-                            event['content'], 
-                            event.get('embeds'), 
-                            event.get('file_path')
-                        )
-                    elif event.get('type') == 'status_update':
-                         self._process_status_update(event)
-                    
-                    time.sleep(2) # Rate limit protection
-                except Exception as e:
-                    logger.error(f"Discord plugin: Error processing event: {e}")
-                finally:
-                    self._event_queue.task_done()
-
-            # 2. Check for Heartbeat (Periodic Status)
-            if self.status_interval_minutes > 0 and self._agent:
-                if (time.time() - self.last_status_time) > (self.status_interval_minutes * 60):
-                    logger.info("Discord plugin: Triggering scheduled status update.")
-                    self._capture_and_queue_status(self._agent)
-                    self.last_status_time = time.time()
-
-    # ------------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------------
+            try:
+                if event.get('type') == 'handshake':
+                    self._process_handshake(event)
+                elif event.get('type') == 'notification':
+                    self._send_discord_payload(event['content'], event.get('embeds'))
+                
+                # Sleep to prevent rate limits
+                time.sleep(2) 
+            except Exception as e:
+                logger.error(f"Discord plugin: Error in worker loop: {e}")
+            finally:
+                self._event_queue.task_done()
 
     def queue_notification(self, content: str, embed: Optional[Dict] = None):
-        self._event_queue.put({
+        payload = {
             'type': 'notification',
             'content': content,
             'embeds': [embed] if embed else []
-        })
-
-    def _get_unit_name(self, agent):
-        try:
-            return agent.config()['main']['name']
-        except:
-            return "Pwnagotchi"
-
-    def _capture_and_queue_status(self, agent, final=False):
-        """Captures screen and queues a status update event."""
-        try:
-            # Capture Screen
-            if agent.view():
-                agent.view().image().save(SCREENSHOT_FILE, 'png')
-            
-            # Queue the event
-            self._event_queue.put({
-                'type': 'status_update',
-                'agent_info': {
-                    'name': self._get_unit_name(agent),
-                    'uptime': str(timedelta(seconds=int(time.time() - self.start_time))),
-                    'session_handshakes': self.session_handshakes,
-                },
-                'final': final
-            })
-        except Exception as e:
-            logger.error(f"Error capturing status: {e}")
-
-    # ------------------------------------------------------------------------
-    # Processors
-    # ------------------------------------------------------------------------
-
-    def _process_status_update(self, event):
-        """Builds the stats embed and attaches the screenshot."""
-        info = event['agent_info']
-        is_final = event['final']
-        
-        # Use Pwnagotchi Voice for the flavor text
-        # We need to mock a 'session' object if we want accurate voice lines, 
-        # or we can just use the generic voice generation.
-        # For simplicity, we'll try to get the 'best' voice line.
-        try:
-            if self._agent:
-                voice_msg = Voice(lang=self._agent.config()['main']['lang']).on_last_session_tweet(self._agent.last_session)
-            else:
-                voice_msg = "Beep Boop."
-        except:
-            voice_msg = "Status Report:"
-
-        embed = {
-            'title': f"📊 Status of {info['name']}",
-            'description': f"{voice_msg}\n\n**Uptime:** {info['uptime']}",
-            'color': 15548997 if is_final else 3447003, # Red if stop, Blue if status
-            'fields': [
-                {'name': '🤝 Handshakes', 'value': str(info['session_handshakes']), 'inline': True},
-                {'name': '🆔 Session ID', 'value': self.session_id, 'inline': True}
-            ],
-            'image': {'url': 'attachment://discord_status.png'},
-            'timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
-
-        content = "💤 **Session Ending**" if is_final else "ℹ️ **Status Update**"
-        
-        self._send_discord_payload(
-            content=content,
-            embeds=[embed],
-            file_path=SCREENSHOT_FILE
-        )
+        self._event_queue.put(payload)
 
     def _process_handshake(self, event):
         filename = event['filename']
@@ -270,6 +197,7 @@ class Discord(plugins.Plugin):
         client = event['client_station']
         bssid = ap.get("mac", "")
 
+        # 1. Get Location
         location = self._get_location_from_wigle(bssid)
         if location:
             loc_str = (f"Latitude: {location['lat']}, Longitude: {location['lon']}\n"
@@ -277,6 +205,7 @@ class Discord(plugins.Plugin):
         else:
             loc_str = "Location not available."
 
+        # 2. Build Embed
         embed = {
             'title': '🔐 New Handshake Captured!',
             'description': (f"**Access Point:** {ap.get('hostname', 'Unknown')}\n"
@@ -287,9 +216,10 @@ class Discord(plugins.Plugin):
             ],
             'footer': {'text': f"Total Session Handshakes: {self.session_handshakes} | ID: {self.session_id}"},
             'timestamp': time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            'color': 16776960
+            'color': 16776960 # Yellow
         }
 
+        # 3. Send with File
         self._send_discord_payload(
             content=f"🤝 New handshake from {ap.get('hostname', 'Unknown')}",
             embeds=[embed],
@@ -297,28 +227,52 @@ class Discord(plugins.Plugin):
         )
 
     # ------------------------------------------------------------------------
-    # Networking
+    # Discord Sender (Supports Files)
     # ------------------------------------------------------------------------
 
     def _send_discord_payload(self, content: str, embeds: List[Dict], file_path: Optional[str] = None):
-        if not self.webhook_url: return
+        if not self.webhook_url:
+            return
 
+        # Prepare the JSON payload
         payload_dict = {"content": content, "embeds": embeds}
 
         try:
             if file_path and os.path.exists(file_path):
-                # Multipart upload (JSON + File)
+                # We have a file. Discord Webhooks require a specific multipart format
+                # 'payload_json' contains the embed data, 'file' contains the binary.
                 with open(file_path, 'rb') as f:
-                    filename = os.path.basename(file_path)
-                    files = {'file': (filename, f, 'application/octet-stream')}
+                    files = {
+                        'file': (os.path.basename(file_path), f, 'application/octet-stream')
+                    }
                     data = {'payload_json': json.dumps(payload_dict)}
-                    self.http_session.post(self.webhook_url, files=files, data=data, timeout=30)
+                    
+                    # Note: We do NOT set Content-Type header here; requests does it for multipart
+                    response = self.http_session.post(
+                        self.webhook_url,
+                        files=files,
+                        data=data,
+                        timeout=30
+                    )
             else:
-                # Standard JSON
-                self.http_session.post(self.webhook_url, json=payload_dict, 
-                                     headers={'Content-Type': 'application/json'}, timeout=10)
+                # No file, standard JSON post
+                response = self.http_session.post(
+                    self.webhook_url,
+                    json=payload_dict,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=10
+                )
+
+            if response.status_code == 429:
+                logger.warning("Discord plugin: Hit Rate Limit (429). Sleeping.")
+                time.sleep(5)
+            elif response.status_code not in [200, 204]:
+                logger.error(f"Discord plugin: POST failed {response.status_code} - {response.text}")
+            else:
+                logger.debug("Discord plugin: Notification sent successfully.")
+
         except Exception as e:
-            logger.error(f"Discord plugin: Send error: {e}")
+            logger.error(f"Discord plugin: Network error sending to Discord: {e}")
 
     # ------------------------------------------------------------------------
     # WiGLE Logic
@@ -346,8 +300,12 @@ class Discord(plugins.Plugin):
                     loc = {'lat': r.get('trilat', 'N/A'), 'lon': r.get('trilong', 'N/A')}
                     self.wigle_cache[normalized] = loc
                     return loc
+            elif res.status_code == 429:
+                logger.warning("Discord plugin: WiGLE Rate Limit.")
+                return None
         except Exception as e:
             logger.error(f"WiGLE lookup failed: {e}")
+        
         return None
 
     def _load_wigle_cache(self):
