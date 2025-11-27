@@ -47,10 +47,18 @@ max_backups_to_keep = 5 # Keeps the 5 newest files, deletes the rest
 files = [
  "/root/settings.yaml",
  "/root/client_secrets.json",
+ "/root/.api-report.json",
  "/root/.ssh",
+ "/root/.bashrc",
+ "/root/.profile",
  "/home/pi/handshakes",
- "/etc/pwnagotchi/config.toml",
- "/usr/local/share/pwnagotchi/custom-plugins"
+ "/root/peers",
+ "/etc/pwnagotchi/",
+ "/usr/local/share/pwnagotchi/custom-plugins",
+ "/etc/ssh/",
+ "/home/pi/.bashrc",
+ "/home/pi/.profile",
+ "/home/pi/.wpa_sec_uploads",
 ]
 exclude = [
   "*.tmp",
