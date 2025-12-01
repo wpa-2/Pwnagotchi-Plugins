@@ -130,12 +130,26 @@ port = 8082
 <a name="wiglelocator"></a>
 ## 📍 WigleLocator: Pinpoint Your Pwns
 
-The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from. 
+# WigleLocator: Pinpoint Your Pwns (v2.0)
 
-*(Note: The Discord plugin v2.5.0 now handles its own lookups, but this plugin is useful if you want to save GPS data locally without Discord.)*
+The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from.
+
+**New in v2.0+:**
+* **Async Processing:** No more UI freezing! Lookups happen in the background.
+* **Offline Queueing:** Wardriving without internet? No problem. It queues handshakes and processes them automatically when you connect to WiFi.
+* **Local Maps:** View your finds on an interactive map at `http://pwnagotchi.local:8080/plugins/wigle_locator/`.
+* **Data Export:** Download KML (Google Earth) and CSV files directly from the Web UI.
+
+*(Note: The Discord plugin v2.5.0 now handles its own lookups, but this plugin is useful if you want to save GPS data locally, generate maps, or use Google Earth without Discord.)*
 
 ### ⚙️ Configuration
+
+Add your WiGLE API key to `/etc/pwnagotchi/config.toml`. You can use either `api_key` or `wigle_api_key`.
+
 ```toml
+main.plugins.wiglelocator.enabled = true
+main.plugins.wiglelocator.api_key = "ENCODED_API_KEY"
+# OR
 [main.plugins.wiglelocator]
 enabled = true
 api_key = "ENCODED_API_KEY"
