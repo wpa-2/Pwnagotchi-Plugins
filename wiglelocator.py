@@ -10,7 +10,7 @@ from flask import send_from_directory, Response
 
 class WigleLocator(Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.0'
+    __version__ = '2.0.1'
     __license__ = 'GPL3'
     __description__ = 'Async WiGLE locator with caching, offline queueing, and Web UI map'
 
@@ -29,8 +29,7 @@ class WigleLocator(Plugin):
         if not os.path.exists(self.data_dir):
             try:
                 os.makedirs(self.data_dir)
-                # Try to set ownership to pi user so you can edit files if needed
-                # 1000 is usually the uid/gid for the default 'pi' user
+                # Try to set ownership to pi user (uid 1000)
                 os.chown(self.data_dir, 1000, 1000) 
             except Exception as e:
                 logging.warning(f"[WigleLocator] Could not set folder permissions: {e}")
@@ -41,9 +40,9 @@ class WigleLocator(Plugin):
         logging.info(f"[WigleLocator] Map available at /plugins/wigle_locator/")
 
     def on_config_changed(self, config):
-        # Check for 'api_key' (standard) or 'wigle_api_key' (user's config)
-        self.api_key = config['main']['plugins']['wiglelocator'].get('api_key') or \
-                       config['main']['plugins']['wiglelocator'].get('wigle_api_key')
+        # STRICTLY use 'api_key' only to avoid installer confusion
+        if 'main' in config and 'plugins' in config['main'] and 'wiglelocator' in config['main']['plugins']:
+            self.api_key = config['main']['plugins']['wiglelocator'].get('api_key')
 
         if not self.api_key:
             logging.error('[WigleLocator] No API key set in config.toml!')
@@ -55,21 +54,13 @@ class WigleLocator(Plugin):
         """
         try:
             if not path or path == '/':
-                # Serve the HTML map
                 return send_from_directory(self.data_dir, 'wigle_map.html')
-            
             elif path == 'kml':
-                # Serve KML file download
                 return send_from_directory(self.data_dir, 'wigle_locations.kml', as_attachment=True)
-            
             elif path == 'csv':
-                # Serve CSV file download
                 return send_from_directory(self.data_dir, 'locations.csv', as_attachment=True)
-                
             elif path == 'json':
-                # Serve JSON cache
                 return send_from_directory(self.data_dir, 'wigle_cache.json', as_attachment=True)
-                
             return "File not found", 404
         except Exception as e:
             logging.error(f"[WigleLocator] Webhook error: {e}")
@@ -82,50 +73,34 @@ class WigleLocator(Plugin):
         bssid = access_point["mac"]
         essid = access_point["hostname"]
         
-        # Start a thread to process this handshake so we don't block the UI
         threading.Thread(target=self._process_candidate, args=(agent, bssid, essid)).start()
 
     def on_internet_available(self, agent):
-        """
-        Triggered when Pwnagotchi connects to the internet.
-        Process the pending queue now.
-        """
         if self.pending_queue and not self.processing:
             logging.info(f"[WigleLocator] Internet available. Processing {len(self.pending_queue)} pending items...")
             threading.Thread(target=self._process_queue, args=(agent,)).start()
 
     def _process_candidate(self, agent, bssid, essid):
-        """
-        Checks cache, then internet. If fail, add to queue.
-        """
         with self.lock:
-            # 1. Check Cache first (Rate Limiting/Optimization)
             if bssid in self.cache:
                 logging.debug(f"[WigleLocator] {essid} found in cache. Skipping API call.")
                 return
 
-        # 2. Try to fetch from WiGLE
         location = self._fetch_wigle_location(bssid)
 
         if location:
             self._handle_success(agent, bssid, essid, location)
         else:
-            # 3. If failed (likely offline), add to queue
             self._add_to_queue(bssid, essid)
 
     def _process_queue(self, agent):
-        """
-        Process the offline queue respecting rate limits.
-        """
         self.processing = True
-        # Create a copy to iterate safely
         queue_copy = list(self.pending_queue)
         
         for item in queue_copy:
             bssid = item['bssid']
             essid = item['essid']
             
-            # Check cache again just in case
             if bssid in self.cache:
                 self._remove_from_queue(bssid)
                 continue
@@ -135,7 +110,6 @@ class WigleLocator(Plugin):
             if location:
                 self._handle_success(agent, bssid, essid, location)
                 self._remove_from_queue(bssid)
-                # Rate limiting: Sleep 2 seconds between batch requests
                 time.sleep(2)
             else:
                 logging.debug(f"[WigleLocator] Failed to locate {essid} during batch processing.")
@@ -143,22 +117,15 @@ class WigleLocator(Plugin):
         self.processing = False
 
     def _handle_success(self, agent, bssid, essid, location):
-        """
-        Called when a location is successfully found (Live or via Queue).
-        """
         logging.info(f"[WigleLocator] Located {essid}: {location['lat']}, {location['lon']}")
         
-        # UI Update (Non-blocking attempt)
         if agent:
             try:
                 view = agent.view()
                 view.set("status", f"Loc: {location['lat']},{location['lon']}")
-                # We do NOT force update here to prevent thread conflicts, 
-                # let the main loop pick it up
             except Exception:
                 pass
 
-        # Update Data Structures
         with self.lock:
             self.cache[bssid] = {
                 'essid': essid,
@@ -166,9 +133,8 @@ class WigleLocator(Plugin):
                 'lon': location['lon'],
                 'timestamp': datetime.now().isoformat()
             }
-            self._save_data() # Save cache to disk
+            self._save_data()
             
-        # Regenerate Maps
         self._generate_outputs()
 
     def _fetch_wigle_location(self, bssid):
@@ -187,10 +153,7 @@ class WigleLocator(Plugin):
                 data = response.json()
                 if data.get('success') and data.get('results'):
                     result = data['results'][0]
-                    return {
-                        'lat': result.get('trilat'),
-                        'lon': result.get('trilong')
-                    }
+                    return {'lat': result.get('trilat'), 'lon': result.get('trilong')}
         except Exception as e:
             logging.debug(f"[WigleLocator] API request failed: {e}")
             
@@ -198,7 +161,6 @@ class WigleLocator(Plugin):
 
     def _add_to_queue(self, bssid, essid):
         with self.lock:
-            # Avoid duplicates
             if not any(x['bssid'] == bssid for x in self.pending_queue):
                 logging.info(f"[WigleLocator] Added {essid} to offline queue.")
                 self.pending_queue.append({'bssid': bssid, 'essid': essid})
@@ -226,19 +188,12 @@ class WigleLocator(Plugin):
                 json.dump(self.cache, f)
             with open(self.queue_file, 'w') as f:
                 json.dump(self.pending_queue, f)
-            
-            # Try to fix permissions so 'pi' user can read/write
             os.chmod(self.cache_file, 0o666)
             os.chmod(self.queue_file, 0o666)
-        except Exception as e:
-            pass # Ignore permission errors during save
-
-    # --- Output Generators ---
+        except Exception:
+            pass
 
     def _generate_outputs(self):
-        """
-        Regenerates KML, HTML, and CSV files from the Cache.
-        """
         try:
             self._generate_kml()
             self._generate_html_map()
@@ -252,8 +207,7 @@ class WigleLocator(Plugin):
             f.write("BSSID,ESSID,Latitude,Longitude,Timestamp\n")
             for bssid, data in self.cache.items():
                 f.write(f"{bssid},{data['essid']},{data['lat']},{data['lon']},{data['timestamp']}\n")
-        try:
-            os.chmod(csv_file, 0o666)
+        try: os.chmod(csv_file, 0o666)
         except: pass
 
     def _generate_kml(self):
@@ -273,17 +227,12 @@ class WigleLocator(Plugin):
     </Placemark>
 """
         kml_content += "  </Document>\n</kml>"
-        
-        with open(kml_file, 'w') as f:
-            f.write(kml_content)
-        try:
-            os.chmod(kml_file, 0o666)
+        with open(kml_file, 'w') as f: f.write(kml_content)
+        try: os.chmod(kml_file, 0o666)
         except: pass
 
     def _generate_html_map(self):
         html_file = os.path.join(self.data_dir, 'wigle_map.html')
-        
-        # Calculate center point (average of all points) or default to 0,0
         lats = [d['lat'] for d in self.cache.values()]
         lons = [d['lon'] for d in self.cache.values()]
         
@@ -293,7 +242,6 @@ class WigleLocator(Plugin):
         else:
             center_lat, center_lon = 0, 0
 
-        # Create markers JS array
         markers_js = "var locations = [\n"
         for bssid, data in self.cache.items():
             safe_essid = data['essid'].replace("'", "\\'")
@@ -341,9 +289,6 @@ class WigleLocator(Plugin):
   </script>
 </body>
 </html>"""
-
-        with open(html_file, 'w') as f:
-            f.write(html_content)
-        try:
-            os.chmod(html_file, 0o666)
+        with open(html_file, 'w') as f: f.write(html_content)
+        try: os.chmod(html_file, 0o666)
         except: pass
