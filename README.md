@@ -144,7 +144,7 @@ The **WigleLocator** plugin automatically queries the WiGLE database to find the
 
 ### ⚙️ Configuration
 
-Add your WiGLE API key to `/etc/pwnagotchi/config.toml`. You can use either `api_key` or `wigle_api_key`.
+Add your WiGLE API key to `/etc/pwnagotchi/config.toml`.
 
 ```toml
 main.plugins.wiglelocator.enabled = true
