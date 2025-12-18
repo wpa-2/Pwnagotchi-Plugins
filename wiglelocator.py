@@ -10,38 +10,35 @@ from flask import send_from_directory, Response
 
 class WigleLocator(Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.1.3'
+    __version__ = '2.1.6'
     __license__ = 'GPL3'
-    __description__ = 'Async WiGLE locator with caching, offline queueing, and Web UI map'
+    __description__ = 'Async WiGLE locator with max retries and strict 429 backoff'
 
     def __init__(self):
         self.api_key = None
-        self.data_dir = '/home/pi/wigle_locator_data'  # Hardcoded to PI user home
+        self.data_dir = '/home/pi/wigle_locator_data'
         self.cache_file = os.path.join(self.data_dir, 'wigle_cache.json')
         self.queue_file = os.path.join(self.data_dir, 'pending_queue.json')
         self.cache = {}
         self.pending_queue = []
         self.lock = threading.Lock()
         self.processing = False
-        self.last_queue_process_time = 0 # Track last attempt time
+        self.last_queue_process_time = 0
+        self.api_limit_hit = False
+        self.api_limit_reset_time = 0
 
     def on_loaded(self):
-        # Ensure the directory exists
         if not os.path.exists(self.data_dir):
             try:
                 os.makedirs(self.data_dir)
-                # Try to set ownership to pi user (uid 1000)
                 os.chown(self.data_dir, 1000, 1000) 
             except Exception as e:
                 logging.warning(f"[WigleLocator] Could not set folder permissions: {e}")
             
-        # Load Cache and Queue
         self._load_data()
         logging.info(f"[WigleLocator] Plugin loaded. Cache: {len(self.cache)}, Queue: {len(self.pending_queue)}")
-        logging.info(f"[WigleLocator] Map available at /plugins/wigle_locator/")
 
     def on_config_changed(self, config):
-        # STRICTLY use 'api_key' only to avoid installer confusion
         if 'main' in config and 'plugins' in config['main'] and 'wiglelocator' in config['main']['plugins']:
             self.api_key = config['main']['plugins']['wiglelocator'].get('api_key')
 
@@ -49,10 +46,6 @@ class WigleLocator(Plugin):
             logging.error('[WigleLocator] No API key set in config.toml!')
 
     def on_webhook(self, path, request):
-        """
-        Serve files via the Pwnagotchi Web UI.
-        Access at http://pwnagotchi.local:8080/plugins/wigle_locator/
-        """
         try:
             if not path or path == '/':
                 return send_from_directory(self.data_dir, 'wigle_map.html')
@@ -70,6 +63,10 @@ class WigleLocator(Plugin):
     def on_handshake(self, agent, filename, access_point, client_station):
         if not self.api_key:
             return
+            
+        # Don't even try if we are in penalty box
+        if self.api_limit_hit and time.time() < self.api_limit_reset_time:
+            return
 
         bssid = access_point["mac"]
         essid = access_point["hostname"]
@@ -78,7 +75,16 @@ class WigleLocator(Plugin):
 
     def on_internet_available(self, agent):
         now = time.time()
-        # Only process if queue exists, not currently processing, AND 5 minutes (300s) have passed since last try
+        
+        # CHECK 1: Are we in 429 penalty box?
+        if self.api_limit_hit:
+            if now > self.api_limit_reset_time:
+                self.api_limit_hit = False
+                logging.info("[WigleLocator] API limit cooldown expired. Resuming operations.")
+            else:
+                return # Still in timeout, do nothing.
+
+        # CHECK 2: Standard batch cooldown (5 mins)
         if self.pending_queue and not self.processing:
             if now - self.last_queue_process_time > 300:
                 logging.info(f"[WigleLocator] Internet available. Processing {len(self.pending_queue)} pending items...")
@@ -87,40 +93,67 @@ class WigleLocator(Plugin):
     def _process_candidate(self, agent, bssid, essid):
         with self.lock:
             if bssid in self.cache:
-                logging.debug(f"[WigleLocator] {essid} found in cache. Skipping API call.")
+                if self.cache[bssid].get('lat') is None:
+                    return
                 return
 
-        location = self._fetch_wigle_location(bssid)
+        result = self._fetch_wigle_location(bssid)
 
-        if location:
-            self._handle_success(agent, bssid, essid, location)
+        if isinstance(result, dict):
+            self._handle_success(agent, bssid, essid, result)
+        elif result == 'LIMIT_EXCEEDED':
+            # Stop immediately, handled inside _fetch
+            pass
+        elif result is False:
+            self._cache_failure(bssid, essid)
         else:
             self._add_to_queue(bssid, essid)
 
     def _process_queue(self, agent):
         self.processing = True
-        self.last_queue_process_time = time.time() # Update timestamp immediately
+        self.last_queue_process_time = time.time()
         
         queue_copy = list(self.pending_queue)
         
         for item in queue_copy:
+            # Emergency Stop Check
+            if self.api_limit_hit:
+                logging.warning("[WigleLocator] 429 Limit Hit - Aborting Queue Processing immediately.")
+                break
+
             bssid = item['bssid']
             essid = item['essid']
+            retries = item.get('retries', 0)
             
             if bssid in self.cache:
                 self._remove_from_queue(bssid)
                 continue
 
-            location = self._fetch_wigle_location(bssid)
+            result = self._fetch_wigle_location(bssid)
             
-            if location:
-                self._handle_success(agent, bssid, essid, location)
+            if isinstance(result, dict):
+                # Success
+                self._handle_success(agent, bssid, essid, result)
                 self._remove_from_queue(bssid)
-                time.sleep(2)
+                time.sleep(5) # Increased safety delay
+            elif result == 'LIMIT_EXCEEDED':
+                # Critical Stop
+                break 
+            elif result is False:
+                # Not Found - Remove
+                self._cache_failure(bssid, essid)
+                self._remove_from_queue(bssid)
+                time.sleep(1)
             else:
-                logging.debug(f"[WigleLocator] Failed to locate {essid} during batch processing.")
-                # Add a small sleep even on failure to prevent CPU/Net spamming on a bad queue
-                time.sleep(0.5)
+                # Other Error (Network/Server)
+                retries += 1
+                if retries >= 3:
+                    logging.warning(f"[WigleLocator] Max retries reached for {essid}. Dropping from queue.")
+                    self._remove_from_queue(bssid)
+                else:
+                    item['retries'] = retries
+                    self._save_data()
+                    time.sleep(1)
         
         self.processing = False
 
@@ -145,7 +178,28 @@ class WigleLocator(Plugin):
             
         self._generate_outputs()
 
+    def _cache_failure(self, bssid, essid):
+        with self.lock:
+            self.cache[bssid] = {
+                'essid': essid,
+                'lat': None,
+                'lon': None,
+                'timestamp': datetime.now().isoformat()
+            }
+            self._save_data()
+
     def _fetch_wigle_location(self, bssid):
+        """
+        Returns:
+          dict: {'lat': ..., 'lon': ...}
+          False: Definitive Not Found (404/No Results)
+          'LIMIT_EXCEEDED': 429 Error (Stop everything)
+          None: Generic Error (Retry later)
+        """
+        # Double check before making request
+        if self.api_limit_hit and time.time() < self.api_limit_reset_time:
+            return 'LIMIT_EXCEEDED'
+
         headers = {'Authorization': 'Basic ' + self.api_key}
         params = {'netid': bssid}
 
@@ -162,6 +216,19 @@ class WigleLocator(Plugin):
                 if data.get('success') and data.get('results'):
                     result = data['results'][0]
                     return {'lat': result.get('trilat'), 'lon': result.get('trilong')}
+                else:
+                    return False
+            elif response.status_code == 404:
+                return False
+            elif response.status_code == 429:
+                logging.error("[WigleLocator] ⚠️ 429 TOO MANY REQUESTS. Pausing WiGLE API for 1 hour.")
+                self.api_limit_hit = True
+                self.api_limit_reset_time = time.time() + 3600 # 1 Hour Penalty
+                return 'LIMIT_EXCEEDED'
+            elif response.status_code == 401:
+                logging.error("[WigleLocator] WiGLE Auth failed.")
+                return False
+                
         except Exception as e:
             logging.debug(f"[WigleLocator] API request failed: {e}")
             
@@ -170,8 +237,12 @@ class WigleLocator(Plugin):
     def _add_to_queue(self, bssid, essid):
         with self.lock:
             if not any(x['bssid'] == bssid for x in self.pending_queue):
-                logging.info(f"[WigleLocator] Added {essid} to offline queue.")
-                self.pending_queue.append({'bssid': bssid, 'essid': essid})
+                # Don't log spam the queue additions
+                self.pending_queue.append({
+                    'bssid': bssid, 
+                    'essid': essid,
+                    'retries': 0
+                })
                 self._save_data()
 
     def _remove_from_queue(self, bssid):
@@ -214,7 +285,8 @@ class WigleLocator(Plugin):
         with open(csv_file, 'w') as f:
             f.write("BSSID,ESSID,Latitude,Longitude,Timestamp\n")
             for bssid, data in self.cache.items():
-                f.write(f"{bssid},{data['essid']},{data['lat']},{data['lon']},{data['timestamp']}\n")
+                if data.get('lat') is not None:
+                    f.write(f"{bssid},{data['essid']},{data['lat']},{data['lon']},{data['timestamp']}\n")
         try: os.chmod(csv_file, 0o666)
         except: pass
 
@@ -226,7 +298,8 @@ class WigleLocator(Plugin):
     <name>Pwnagotchi WiGLE Locations</name>
 """
         for bssid, data in self.cache.items():
-            kml_content += f"""    <Placemark>
+            if data.get('lat') is not None:
+                kml_content += f"""    <Placemark>
       <name>{data['essid']}</name>
       <description>BSSID: {bssid}</description>
       <Point>
@@ -241,8 +314,8 @@ class WigleLocator(Plugin):
 
     def _generate_html_map(self):
         html_file = os.path.join(self.data_dir, 'wigle_map.html')
-        lats = [d['lat'] for d in self.cache.values()]
-        lons = [d['lon'] for d in self.cache.values()]
+        lats = [d['lat'] for d in self.cache.values() if d.get('lat') is not None]
+        lons = [d['lon'] for d in self.cache.values() if d.get('lon') is not None]
         
         if lats:
             center_lat = sum(lats) / len(lats)
@@ -252,8 +325,9 @@ class WigleLocator(Plugin):
 
         markers_js = "var locations = [\n"
         for bssid, data in self.cache.items():
-            safe_essid = data['essid'].replace("'", "\\'")
-            markers_js += f"  ['{safe_essid} ({bssid})', {data['lat']}, {data['lon']}],\n"
+            if data.get('lat') is not None:
+                safe_essid = data['essid'].replace("'", "\\'")
+                markers_js += f"  ['{safe_essid} ({bssid})', {data['lat']}, {data['lon']}],\n"
         markers_js += "];"
 
         html_content = f"""<!DOCTYPE html>
