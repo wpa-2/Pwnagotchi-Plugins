@@ -10,7 +10,7 @@ from flask import send_from_directory, Response
 
 class WigleLocator(Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.0.1'
+    __version__ = '2.1.3'
     __license__ = 'GPL3'
     __description__ = 'Async WiGLE locator with caching, offline queueing, and Web UI map'
 
@@ -23,6 +23,7 @@ class WigleLocator(Plugin):
         self.pending_queue = []
         self.lock = threading.Lock()
         self.processing = False
+        self.last_queue_process_time = 0 # Track last attempt time
 
     def on_loaded(self):
         # Ensure the directory exists
@@ -76,9 +77,12 @@ class WigleLocator(Plugin):
         threading.Thread(target=self._process_candidate, args=(agent, bssid, essid)).start()
 
     def on_internet_available(self, agent):
+        now = time.time()
+        # Only process if queue exists, not currently processing, AND 5 minutes (300s) have passed since last try
         if self.pending_queue and not self.processing:
-            logging.info(f"[WigleLocator] Internet available. Processing {len(self.pending_queue)} pending items...")
-            threading.Thread(target=self._process_queue, args=(agent,)).start()
+            if now - self.last_queue_process_time > 300:
+                logging.info(f"[WigleLocator] Internet available. Processing {len(self.pending_queue)} pending items...")
+                threading.Thread(target=self._process_queue, args=(agent,)).start()
 
     def _process_candidate(self, agent, bssid, essid):
         with self.lock:
@@ -95,6 +99,8 @@ class WigleLocator(Plugin):
 
     def _process_queue(self, agent):
         self.processing = True
+        self.last_queue_process_time = time.time() # Update timestamp immediately
+        
         queue_copy = list(self.pending_queue)
         
         for item in queue_copy:
@@ -113,6 +119,8 @@ class WigleLocator(Plugin):
                 time.sleep(2)
             else:
                 logging.debug(f"[WigleLocator] Failed to locate {essid} during batch processing.")
+                # Add a small sleep even on failure to prevent CPU/Net spamming on a bad queue
+                time.sleep(0.5)
         
         self.processing = False
 
