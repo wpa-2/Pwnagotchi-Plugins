@@ -10,15 +10,16 @@ from flask import send_from_directory, Response
 
 class WigleLocator(Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.1.6'
+    __version__ = '2.1.11'
     __license__ = 'GPL3'
-    __description__ = 'Async WiGLE locator with max retries and strict 429 backoff'
+    __description__ = 'Async WiGLE locator with flush capability and absolute path routing'
 
     def __init__(self):
         self.api_key = None
         self.data_dir = '/home/pi/wigle_locator_data'
         self.cache_file = os.path.join(self.data_dir, 'wigle_cache.json')
         self.queue_file = os.path.join(self.data_dir, 'pending_queue.json')
+        self.status_file = os.path.join(self.data_dir, 'api_status.json')
         self.cache = {}
         self.pending_queue = []
         self.lock = threading.Lock()
@@ -36,6 +37,14 @@ class WigleLocator(Plugin):
                 logging.warning(f"[WigleLocator] Could not set folder permissions: {e}")
             
         self._load_data()
+        
+        # Check cooldown on load
+        if self.api_limit_hit and time.time() < self.api_limit_reset_time:
+            remaining = int((self.api_limit_reset_time - time.time()) / 60)
+            logging.warning(f"[WigleLocator] Plugin loaded but API is in cooldown for {remaining} mins.")
+
+        # Regenerate map on load to ensure JS is up to date
+        self._generate_outputs()
         logging.info(f"[WigleLocator] Plugin loaded. Cache: {len(self.cache)}, Queue: {len(self.pending_queue)}")
 
     def on_config_changed(self, config):
@@ -47,14 +56,37 @@ class WigleLocator(Plugin):
 
     def on_webhook(self, path, request):
         try:
-            if not path or path == '/':
+            # Normalize path: strip leading/trailing slashes and handle None
+            if not path:
+                path = ''
+            path = path.strip('/')
+
+            # Serve Map (Root)
+            if path == '' or path == 'index.html':
                 return send_from_directory(self.data_dir, 'wigle_map.html')
+            
+            # Serve Data Files
             elif path == 'kml':
                 return send_from_directory(self.data_dir, 'wigle_locations.kml', as_attachment=True)
             elif path == 'csv':
                 return send_from_directory(self.data_dir, 'locations.csv', as_attachment=True)
             elif path == 'json':
                 return send_from_directory(self.data_dir, 'wigle_cache.json', as_attachment=True)
+            
+            # Flush Command
+            elif path == 'flush':
+                with self.lock:
+                    count = len(self.pending_queue)
+                    self.pending_queue = []
+                    self._save_data()
+                
+                # Reset 429 status manually
+                self.api_limit_hit = False
+                self._save_status()
+                
+                logging.info(f"[WigleLocator] Queue flushed by user. Removed {count} items.")
+                return f"Queue flushed! Removed {count} items.", 200
+                
             return "File not found", 404
         except Exception as e:
             logging.error(f"[WigleLocator] Webhook error: {e}")
@@ -64,7 +96,6 @@ class WigleLocator(Plugin):
         if not self.api_key:
             return
             
-        # Don't even try if we are in penalty box
         if self.api_limit_hit and time.time() < self.api_limit_reset_time:
             return
 
@@ -76,25 +107,23 @@ class WigleLocator(Plugin):
     def on_internet_available(self, agent):
         now = time.time()
         
-        # CHECK 1: Are we in 429 penalty box?
         if self.api_limit_hit:
             if now > self.api_limit_reset_time:
                 self.api_limit_hit = False
+                self._save_status()
                 logging.info("[WigleLocator] API limit cooldown expired. Resuming operations.")
             else:
-                return # Still in timeout, do nothing.
+                return 
 
-        # CHECK 2: Standard batch cooldown (5 mins)
         if self.pending_queue and not self.processing:
-            if now - self.last_queue_process_time > 300:
+            if now - self.last_queue_process_time > 300: # 5 minutes between batch attempts
                 logging.info(f"[WigleLocator] Internet available. Processing {len(self.pending_queue)} pending items...")
                 threading.Thread(target=self._process_queue, args=(agent,)).start()
 
     def _process_candidate(self, agent, bssid, essid):
         with self.lock:
             if bssid in self.cache:
-                if self.cache[bssid].get('lat') is None:
-                    return
+                # Already processed (either found or failed)
                 return
 
         result = self._fetch_wigle_location(bssid)
@@ -102,7 +131,6 @@ class WigleLocator(Plugin):
         if isinstance(result, dict):
             self._handle_success(agent, bssid, essid, result)
         elif result == 'LIMIT_EXCEEDED':
-            # Stop immediately, handled inside _fetch
             pass
         elif result is False:
             self._cache_failure(bssid, essid)
@@ -113,10 +141,10 @@ class WigleLocator(Plugin):
         self.processing = True
         self.last_queue_process_time = time.time()
         
+        # Work on a copy of the queue
         queue_copy = list(self.pending_queue)
         
         for item in queue_copy:
-            # Emergency Stop Check
             if self.api_limit_hit:
                 logging.warning("[WigleLocator] 429 Limit Hit - Aborting Queue Processing immediately.")
                 break
@@ -125,6 +153,7 @@ class WigleLocator(Plugin):
             essid = item['essid']
             retries = item.get('retries', 0)
             
+            # Check cache again in case another thread grabbed it
             if bssid in self.cache:
                 self._remove_from_queue(bssid)
                 continue
@@ -132,20 +161,18 @@ class WigleLocator(Plugin):
             result = self._fetch_wigle_location(bssid)
             
             if isinstance(result, dict):
-                # Success
                 self._handle_success(agent, bssid, essid, result)
                 self._remove_from_queue(bssid)
-                time.sleep(5) # Increased safety delay
+                time.sleep(5) # Be nice to the API
             elif result == 'LIMIT_EXCEEDED':
-                # Critical Stop
                 break 
             elif result is False:
-                # Not Found - Remove
+                # Permanent failure (404 etc)
                 self._cache_failure(bssid, essid)
                 self._remove_from_queue(bssid)
                 time.sleep(1)
             else:
-                # Other Error (Network/Server)
+                # Temporary failure, retry later
                 retries += 1
                 if retries >= 3:
                     logging.warning(f"[WigleLocator] Max retries reached for {essid}. Dropping from queue.")
@@ -189,14 +216,6 @@ class WigleLocator(Plugin):
             self._save_data()
 
     def _fetch_wigle_location(self, bssid):
-        """
-        Returns:
-          dict: {'lat': ..., 'lon': ...}
-          False: Definitive Not Found (404/No Results)
-          'LIMIT_EXCEEDED': 429 Error (Stop everything)
-          None: Generic Error (Retry later)
-        """
-        # Double check before making request
         if self.api_limit_hit and time.time() < self.api_limit_reset_time:
             return 'LIMIT_EXCEEDED'
 
@@ -221,9 +240,10 @@ class WigleLocator(Plugin):
             elif response.status_code == 404:
                 return False
             elif response.status_code == 429:
-                logging.error("[WigleLocator] ⚠️ 429 TOO MANY REQUESTS. Pausing WiGLE API for 1 hour.")
+                logging.error("[WigleLocator] ⚠️ 429 TOO MANY REQUESTS. Daily Limit Hit? Pausing 6 hours.")
                 self.api_limit_hit = True
-                self.api_limit_reset_time = time.time() + 3600 # 1 Hour Penalty
+                self.api_limit_reset_time = time.time() + (3600 * 6)
+                self._save_status()
                 return 'LIMIT_EXCEEDED'
             elif response.status_code == 401:
                 logging.error("[WigleLocator] WiGLE Auth failed.")
@@ -237,7 +257,6 @@ class WigleLocator(Plugin):
     def _add_to_queue(self, bssid, essid):
         with self.lock:
             if not any(x['bssid'] == bssid for x in self.pending_queue):
-                # Don't log spam the queue additions
                 self.pending_queue.append({
                     'bssid': bssid, 
                     'essid': essid,
@@ -258,6 +277,11 @@ class WigleLocator(Plugin):
             if os.path.exists(self.queue_file):
                 with open(self.queue_file, 'r') as f:
                     self.pending_queue = json.load(f)
+            if os.path.exists(self.status_file):
+                with open(self.status_file, 'r') as f:
+                    status = json.load(f)
+                    self.api_limit_hit = status.get('limit_hit', False)
+                    self.api_limit_reset_time = status.get('reset_time', 0)
         except Exception as e:
             logging.error(f"[WigleLocator] Error loading data: {e}")
 
@@ -269,6 +293,17 @@ class WigleLocator(Plugin):
                 json.dump(self.pending_queue, f)
             os.chmod(self.cache_file, 0o666)
             os.chmod(self.queue_file, 0o666)
+        except Exception:
+            pass
+
+    def _save_status(self):
+        try:
+            with open(self.status_file, 'w') as f:
+                json.dump({
+                    'limit_hit': self.api_limit_hit,
+                    'reset_time': self.api_limit_reset_time
+                }, f)
+            os.chmod(self.status_file, 0o666)
         except Exception:
             pass
 
@@ -343,6 +378,7 @@ class WigleLocator(Plugin):
     #controls {{ position: absolute; top: 10px; right: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 5px rgba(0,0,0,0.3); }}
     a {{ display: block; margin: 5px 0; color: #333; text-decoration: none; font-weight: bold; }}
     a:hover {{ text-decoration: underline; }}
+    button {{ background: red; color: white; border: none; padding: 5px 10px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 5px; }}
   </style>
 </head>
 <body>
@@ -351,6 +387,8 @@ class WigleLocator(Plugin):
     <a href="kml">Download .KML (Google Earth)</a>
     <a href="csv">Download .CSV (Excel)</a>
     <a href="json">Download .JSON (Raw)</a>
+    <hr>
+    <button onclick="flushQueue()">Flush Queue (Reset 429)</button>
   </div>
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
@@ -367,6 +405,28 @@ class WigleLocator(Plugin):
       L.marker([locations[i][1], locations[i][2]])
         .bindPopup(locations[i][0])
         .addTo(map);
+    }}
+
+    function flushQueue() {{
+        if(!confirm('Are you sure you want to delete the pending queue? This will stop the 429 loops.')) return;
+        
+        // Robust path construction
+        var path = window.location.pathname;
+        // Strip trailing index.html or trailing slash
+        path = path.replace(/index\.html$/, '').replace(/\/$/, '');
+        // Construct clean URL
+        var flushUrl = path + '/flush';
+
+        fetch(flushUrl)
+            .then(response => {{
+                if (response.ok) {{
+                    alert('Queue flushed successfully! The logs should quiet down.');
+                    location.reload(); 
+                }} else {{
+                    alert('Error flushing queue: ' + response.statusText);
+                }}
+            }})
+            .catch(err => alert('Network Error: ' + err));
     }}
   </script>
 </body>
