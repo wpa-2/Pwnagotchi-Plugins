@@ -127,23 +127,48 @@ port = 8082
 
 ---
 
+---
 <a name="wiglelocator"></a>
 ## 📍 WigleLocator: Pinpoint Your Pwns
 
-# WigleLocator: Pinpoint Your Pwns (v2.0)
+# WigleLocator: Pinpoint Your Pwns (v2.2)
 
 The **WigleLocator** plugin automatically queries the WiGLE database to find the geographic coordinates for every access point you capture a handshake from.
 
-**New in v2.0+:**
-* **Async Processing:** No more UI freezing! Lookups happen in the background.
-* **Offline Queueing:** Wardriving without internet? No problem. It queues handshakes and processes them automatically when you connect to WiFi.
-* **Local Maps:** View your finds on an interactive map at `http://pwnagotchi.local:8080/plugins/wigle_locator/`.
-* **Data Export:** Download KML (Google Earth) and CSV files directly from the Web UI.
+**New in v2.2:**
+* **🛡️ WiGLE-Compliant Rate Limiting:** Properly respects 429 responses with automatic 24-hour cooldowns to prevent API abuse
+* **📊 Live Status Dashboard:** Interactive modal showing real-time stats (queue size, daily requests, cooldown status)
+* **🔄 Auto-Refresh:** Stats update every 30 seconds with manual refresh option
+* **⚡ Conservative Processing:** Enforces 2-second intervals between requests, processes max 20 items per batch every 10 minutes
+* **🔒 CSRF Protection:** Secure token-based authentication for administrative actions
+* **💾 Smart Caching:** Prevents memory bloat with 10,000 entry limit and automatic trimming
+* **🗑️ One-Click Reset:** Flush queue and reset rate limits via web interface
+
+**Features from v2.0:**
+* **Async Processing:** No UI freezing - lookups happen in background threads
+* **Offline Queueing:** Captures handshakes offline and processes when internet available
+* **Interactive Map:** View located networks at `http://pwnagotchi.local:8080/plugins/wiglelocator/`
+* **Multi-Format Export:** Download KML (Google Earth), CSV (Excel), and JSON directly from web UI
 
 *(Note: The Discord plugin v2.5.0 now handles its own lookups, but this plugin is useful if you want to save GPS data locally, generate maps, or use Google Earth without Discord.)*
 
 ### ⚙️ Configuration
 
+Add your WiGLE API key to `/etc/pwnagotchi/config.toml`:
+```toml
+main.plugins.wiglelocator.enabled = true
+main.plugins.wiglelocator.api_key = "ENCODED_API_KEY"
+```
+
+### 📊 Monitoring
+
+Access the web interface at `http://pwnagotchi.local:8080/plugins/wiglelocator/` to:
+- View all located networks on an interactive Leaflet map
+- Check real-time status (queue size, daily API usage, cooldown timer)
+- Download data in KML, CSV, or JSON formats
+- Flush queue and reset rate limits if needed
+
+The plugin automatically enforces WiGLE's rate limits to ensure compliance and prevent API suspension.
 Add your WiGLE API key to `/etc/pwnagotchi/config.toml`.
 
 ```toml
