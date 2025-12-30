@@ -77,24 +77,26 @@ sudo tar xzf /home/pi/backups/YOUR_BACKUP_FILENAME.tar.gz -C /
 
 <a name="discord"></a>
 ## 🔔 Discord: The Ultimate Exfiltration Tool
-*(Updated to v2.5.0 - High Performance)*
+*(Updated to v3.0.1 - Production Ready)*
 
-Get instant, beautifully formatted notifications about your Pwnagotchi's conquests via Discord. 
+Get instant, beautifully formatted notifications about your Pwnagotchi's conquests via Discord.
 
-**New in v2.5.0:**
-* **📁 Automatic Exfiltration:** The plugin now **uploads the captured `.pcap` file directly to Discord**. You can download and crack handshakes immediately—no SSH required.
-* **⚡ Zero-Lag Queue:** Uses a threaded background worker to prevent the Pwnagotchi from freezing or slowing down during captures. Perfect for high-speed scanning.
-* **📍 Intelligence:** Enriches alerts with direct Google Maps links via WiGLE.
-* **📊 Session Tracking:** Reports uptime and handshake counts when the session starts and ends.
+**Key Features:**
+* **📁 Automatic Exfiltration:** Uploads captured `.pcap` files directly to Discord. Download and crack handshakes immediately—no SSH required.
+* **⚡ Zero-Lag Queue:** Threaded background worker prevents freezing or slowdown during captures. Perfect for high-speed scanning.
+* **📍 Intelligence:** Enriches alerts with direct Google Maps links via WiGLE geolocation.
+* **📊 Session Tracking:** Reports uptime, handshake counts, and stats on boot/shutdown.
+* **🔄 Auto-Retry:** Network failures? Automatic retry with exponential backoff (3 attempts).
+* **🛡️ Thread-Safe:** Rock-solid concurrency for rapid-fire handshake captures.
 
 ### ⚙️ Configuration
 ```toml
-[main.plugins.discord]
-enabled = true
-webhook_url = "YOUR_DISCORD_WEBHOOK_URL"
-wigle_api_key = "ENCODED_API_KEY" 
+main.plugins.discord.enabled = true
+main.plugins.discord.webhook_url = "YOUR_DISCORD_WEBHOOK_URL"
+main.plugins.discord.wigle_api_key = "ENCODED_API_KEY"
 ```
-*Note: `wigle_api_key` must be the Base64 encoded string of `Username:Token`.*
+*Note: `wigle_api_key` must be Base64 encoded: `echo -n "Username:Token" | base64`*
+
 
 ---
 
