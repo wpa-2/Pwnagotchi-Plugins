@@ -2,6 +2,8 @@
 
 A curated collection of powerful plugins designed to enhance your Pwnagotchi experience. These tools add functionality ranging from remote command execution and automated backups to rich Discord notifications and VPN connectivity. Supercharge your Pwnagotchi and make it an even more formidable (and convenient) Wi-Fi companion!
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/wpa2)
+
 ---
 
 ## 🔌 Universal Installation
@@ -21,6 +23,7 @@ A curated collection of powerful plugins designed to enhance your Pwnagotchi exp
 | Plugin | Description | Setup Guide |
 | :--- | :--- | :--- |
 | **🛡️ AutoBackup** | **v2.0** - Automated backups with retention policy (garbage collection). | [Scroll Down](#autobackup) |
+| **💾 GitHub_Backups** | Automated Git backup script for syncing your Pwnagotchi configs to GitHub/Gitea. | [View Guide](./GitHub_Backups/README.md) |
 | **🔔 Discord** | **v2.5.0** - Uploads **.pcap files**, maps locations, and tracks sessions without lag. | [Scroll Down](#discord) |
 | **🔒 Pwny-WG** | Connect to home **WireGuard VPN** and sync handshakes automatically via SSH. | [View Guide](./Pwny-WG/README.md) |
 | **🦎 Pwny-Tailscale** | Easy **Tailscale** integration for remote access without port forwarding. | [View Guide](./Pwny-Tailscale/README.md) |
