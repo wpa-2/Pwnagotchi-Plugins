@@ -175,7 +175,7 @@ The `[fs.memory]` section helps reduce SD card wear by using RAM for temporary f
 - **Start Simple**: At first, only enable a few plugins like `auto-tune` and `webcfg`.
 - **Use the Web UI**: Set `ui.web.enabled = true` and visit `http://<pwnagotchi-ip>:8080` in your browser (the default IP over USB is often `10.0.0.2`).
 - **Check the Logs**: If something isn't working, check the log file at `/var/log/pwnagotchi.log` for clues.
-- **Join the Community**: Visit the official [pwnagotchi.ai](https://pwnagotchi.ai/) website, Discord, or community forums for help and ideas.
+- **Join the Community**: Visit the official [pwnagotchi.ai](https://pwnagotchi.org/) website, Discord, or community forums for help and ideas.
 
 </details>
 
