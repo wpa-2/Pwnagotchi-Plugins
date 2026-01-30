@@ -40,9 +40,7 @@ The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of 
 ### ⚙️ Configuration Example:
     [main.plugins.auto_backup]
     enabled = true
-    interval = "daily"
-    backup_location = "/home/pi/backups/"
-    max_backups_to_keep = 5
+    backup_location = "/home/pi/backups"
 
 ---
 
