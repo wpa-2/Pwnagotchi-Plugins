@@ -41,6 +41,7 @@ The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of 
     [main.plugins.auto_backup]
     enabled = true
     backup_location = "/home/pi/backups"
+    commands = ["tar", "czf"]
 
 ---
 
