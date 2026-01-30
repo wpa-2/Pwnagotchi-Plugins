@@ -10,9 +10,35 @@ import glob
 
 class AutoBackup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.1'
+    __version__ = '2.2'
     __license__ = 'GPL3'
-    __description__ = 'Backs up files and cleans up old backups to save space.'
+    __description__ = 'Backs up Pwnagotchi configuration and data, keeping recent backups.'
+
+    # Hardcoded defaults for Pwnagotchi
+    DEFAULT_FILES = [
+        "/root/settings.yaml",
+        "/root/client_secrets.json",
+        "/root/.api-report.json",
+        "/root/.ssh",
+        "/root/.bashrc",
+        "/root/.profile",
+        "/root/peers",
+        "/etc/pwnagotchi/",
+        "/usr/local/share/pwnagotchi/custom-plugins",
+        "/etc/ssh/",
+        "/home/pi/handshakes/",
+        "/home/pi/.bashrc",
+        "/home/pi/.profile",
+        "/home/pi/.wpa_sec_uploads",
+    ]
+    
+    DEFAULT_INTERVAL_SECONDS = 60 * 60  # 60 minutes
+    DEFAULT_MAX_BACKUPS = 3
+    DEFAULT_EXCLUDE = [
+        "/etc/pwnagotchi/logs/*",
+        "*.bak",
+        "*.tmp",
+    ]
 
     def __init__(self):
         self.ready = False
@@ -25,63 +51,50 @@ class AutoBackup(plugins.Plugin):
         self.hostname = socket.gethostname()
 
     def on_loaded(self):
-        required_options = ['files', 'interval', 'backup_location', 'max_tries']
-        for opt in required_options:
-            if opt not in self.options or self.options[opt] is None:
-                logging.error(f"AUTO-BACKUP: Option '{opt}' is not set.")
-                return
+        """Validate only required option: backup_location"""
+        if 'backup_location' not in self.options or self.options['backup_location'] is None:
+            logging.error("AUTO-BACKUP: Option 'backup_location' is not set.")
+            return
 
-        if 'commands' not in self.options or not self.options['commands']:
-            self.options['commands'] = ["tar", "czf"]
-            
-        # Default to keeping 10 backups if not specified
-        self.options.setdefault('max_backups_to_keep', 10)
-        
         # Get hostname for backup filenames
         self.hostname = socket.gethostname()
+        
+        # Apply sensible defaults
+        self.options.setdefault('files', self.DEFAULT_FILES)
+        self.options.setdefault('interval_seconds', self.DEFAULT_INTERVAL_SECONDS)
+        self.options.setdefault('max_backups_to_keep', self.DEFAULT_MAX_BACKUPS)
+        self.options.setdefault('exclude', self.DEFAULT_EXCLUDE)
+        self.options.setdefault('commands', ["tar", "czf"])
+        self.options.setdefault('include', [])
+        
+        # Validate include paths if specified
+        if self.options['include']:
+            if not isinstance(self.options['include'], list):
+                self.options['include'] = [self.options['include']]
+            
+            for path in self.options['include']:
+                if not os.path.exists(path):
+                    logging.warning(f"AUTO-BACKUP: include path '{path}' does not exist, will skip if still missing at backup time")
             
         self.ready = True
-        logging.info(f"AUTO-BACKUP: Plugin loaded for host '{self.hostname}'.")
-
-    def get_interval_seconds(self):
-        """Convert interval configuration to seconds."""
-        interval = self.options['interval']
-        if isinstance(interval, str):
-            interval_lower = interval.lower()
-            if interval_lower == "daily":
-                return 24 * 60 * 60
-            elif interval_lower == "hourly":
-                return 60 * 60
-            else:
-                try:
-                    return float(interval) * 60
-                except ValueError:
-                    logging.warning(f"AUTO-BACKUP: Invalid interval '{interval}', defaulting to daily")
-                    return 24 * 60 * 60
-        elif isinstance(interval, (int, float)):
-            return float(interval) * 60
-        return 24 * 60 * 60
+        include_msg = f", includes: {len(self.options['include'])} additional path(s)" if self.options['include'] else ""
+        logging.info(f"AUTO-BACKUP: Plugin loaded for host '{self.hostname}'. Interval: 60min, Backups kept: {self.options['max_backups_to_keep']}{include_msg}")
 
     def is_backup_due(self):
         """Check if backup is due based on interval."""
-        interval_sec = self.get_interval_seconds()
         try:
             last_backup = os.path.getmtime(self.status_file)
         except OSError:
             return True
-        return (time.time() - last_backup) >= interval_sec
+        return (time.time() - last_backup) >= self.options['interval_seconds']
 
     def _cleanup_old_backups(self):
         """Deletes the oldest backups if we exceed the limit."""
         try:
             backup_dir = self.options['backup_location']
-            max_keep = self.options.get('max_backups_to_keep', 10)
+            max_keep = self.options['max_backups_to_keep']
             
-            if max_keep <= 0:
-                logging.warning("AUTO-BACKUP: max_backups_to_keep is 0 or negative, skipping cleanup")
-                return
-
-            # Filter by this device's hostname to avoid deleting other backups
+            # Filter by this device's hostname
             search_pattern = os.path.join(backup_dir, f"{self.hostname}-backup-*.tar.gz")
             files = glob.glob(search_pattern)
             
@@ -100,11 +113,9 @@ class AutoBackup(plugins.Plugin):
                 for old_file in files[:num_to_delete]:
                     try:
                         os.remove(old_file)
-                        logging.info(f"AUTO-BACKUP: Deleted old backup: {os.path.basename(old_file)}")
+                        logging.info(f"AUTO-BACKUP: Deleted: {os.path.basename(old_file)}")
                     except OSError as e:
                         logging.error(f"AUTO-BACKUP: Failed to delete {old_file}: {e}")
-            else:
-                logging.debug(f"AUTO-BACKUP: {len(files)} backups found, within limit of {max_keep}")
                         
         except Exception as e:
             logging.error(f"AUTO-BACKUP: Cleanup error: {e}")
@@ -132,13 +143,13 @@ class AutoBackup(plugins.Plugin):
                         logging.error(f"AUTO-BACKUP: Failed to create backup directory: {e}")
                         return
 
-                # Add timestamp to filename to prevent overwrites
+                # Add timestamp to filename
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
                 backup_file = os.path.join(backup_location, f"{pwnagotchi_name}-backup-{timestamp}.tar.gz")
 
                 display = agent.view()
                 
-                logging.info(f"AUTO-BACKUP: Starting backup process to {backup_file}...")
+                logging.info(f"AUTO-BACKUP: Starting backup to {backup_file}...")
                 display.set('status', 'Backing up...')
                 display.update()
 
@@ -147,7 +158,7 @@ class AutoBackup(plugins.Plugin):
                 command_list.append(backup_file)
 
                 # Add exclusions
-                for pattern in self.options.get('exclude', []):
+                for pattern in self.options['exclude']:
                     command_list.append(f"--exclude={pattern}")
                 
                 # Add files to backup
@@ -189,50 +200,55 @@ class AutoBackup(plugins.Plugin):
             except:
                 pass
         finally:
-            # Always clear the in-progress flag
             self.backup_in_progress = False
 
     def on_internet_available(self, agent):
         """Triggered when internet becomes available."""
-        # Check if plugin is ready
         if not self.ready:
             return
         
-        # Check if max tries exceeded
-        if self.options['max_tries'] and self.tries >= self.options['max_tries']:
-            logging.debug(f"AUTO-BACKUP: Max tries ({self.options['max_tries']}) exceeded, skipping backup")
+        if self.tries >= 3:  # Hardcoded max_tries
+            logging.debug(f"AUTO-BACKUP: Max tries (3) exceeded, skipping backup")
             return
 
-        # Check if backup is due
         if not self.is_backup_due():
             now = time.time()
             # Log status once per hour to avoid spam
             if now - self.last_not_due_logged > 3600:
-                next_backup = self.get_interval_seconds() - (now - os.path.getmtime(self.status_file))
-                logging.debug(f"AUTO-BACKUP: Backup not due yet. Next backup in ~{int(next_backup/3600)} hours")
+                try:
+                    last_backup = os.path.getmtime(self.status_file)
+                    next_backup = self.options['interval_seconds'] - (now - last_backup)
+                    logging.debug(f"AUTO-BACKUP: Backup not due yet. Next backup in ~{int(next_backup/3600)}h {int((next_backup%3600)/60)}m")
+                except:
+                    pass
                 self.last_not_due_logged = now
             return
 
         # Check if files exist
         existing_files = list(filter(os.path.exists, self.options['files']))
+        
+        # Add include paths if specified
+        include_paths = self.options.get('include', [])
+        if include_paths:
+            for path in include_paths:
+                if os.path.exists(path):
+                    existing_files.append(path)
+                    logging.debug(f"AUTO-BACKUP: Added include path: {path}")
+                else:
+                    logging.debug(f"AUTO-BACKUP: Include path does not exist, skipping: {path}")
+        
         if not existing_files:
             logging.warning("AUTO-BACKUP: No files to backup exist")
             return
 
         # Prevent multiple simultaneous backups
-        if self.backup_in_progress:
+        if self.backup_in_progress or self.lock.locked():
             logging.debug("AUTO-BACKUP: Backup already in progress, skipping")
             return
-        
-        # Check if lock is already held (extra safety)
-        if self.lock.locked():
-            logging.debug("AUTO-BACKUP: Lock already held, skipping")
-            return
 
-        # Set flag before starting thread to prevent race condition
         self.backup_in_progress = True
         
-        # Start backup in daemon thread so it doesn't prevent shutdown
+        # Start backup in daemon thread
         backup_thread = threading.Thread(
             target=self._run_backup_thread, 
             args=(agent, existing_files),

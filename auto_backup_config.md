@@ -1,60 +1,69 @@
-Old style 
-```
-main.plugins.auto_backup.enabled = true
-main.plugins.auto_backup.interval = "60"
-main.plugins.auto_backup.max_tries = 3
-main.plugins.auto_backup.backup_location = "/home/pi/"
-main.plugins.auto_backup.files = [
- "/root/settings.yaml",
- "/root/client_secrets.json",
- "/root/.api-report.json",
- "/root/.ssh",
- "/root/.bashrc",
- "/root/.profile",
- "/home/pi/handshakes",
- "/root/peers",
- "/etc/pwnagotchi/",
- "/usr/local/share/pwnagotchi/custom-plugins",
- "/etc/ssh/",
- "/home/pi/.bashrc",
- "/home/pi/.profile",
- "/home/pi/.wpa_sec_uploads",
-]
-main.plugins.auto_backup.exclude = [
- "/etc/pwnagotchi/logs/*",
- "*.bak",
- "*.tmp",
-]
+# auto_backup.py
 
-```
-New style
-```
+Automated backup plugin for Pwnagotchi that runs on a schedule and preserves your device configuration, settings, and captures.
+
+## What Gets Backed Up (By Default)
+
+- Pwnagotchi settings and config
+- SSH keys and authorized hosts
+- Client secrets
+- Handshake captures
+- Custom plugins
+- Installed Python packages
+- Web UI data
+
+Backups run every 60 minutes, keep the 3 most recent, and skip logs/temp files automatically.
+
+## Configuration
+
+**Minimal (just enable it):**
+```toml
 [main.plugins.auto_backup]
 enabled = true
-interval = "60"
-max_tries = 0
-backup_location = "/home/pi/"
-files = [
- "/root/settings.yaml",
- "/root/client_secrets.json",
- "/root/.api-report.json",
- "/root/.ssh",
- "/root/.bashrc",
- "/root/.profile",
- "/home/pi/handshakes",
- "/root/peers",
- "/etc/pwnagotchi/",
- "/usr/local/share/pwnagotchi/custom-plugins",
- "/etc/ssh/",
- "/home/pi/.bashrc",
- "/home/pi/.profile",
- "/home/pi/.wpa_sec_uploads"
-]
-exclude = [
-  "/etc/pwnagotchi/logs/*"
-]
-# NO commands line is needed here either.
+backup_location = "/home/pi/backups"
 ```
+
+**Add custom directories:**
+```toml
+[main.plugins.auto_backup]
+enabled = true
+backup_location = "/home/pi/backups"
+include = ["/home/pi/my_custom_data"]
+```
+
+**Add multiple paths:**
+```toml
+[main.plugins.auto_backup]
+enabled = true
+backup_location = "/home/pi/backups"
+include = [
+  "/home/pi/my_custom_data",
+  "/opt/important_app",
+  "/etc/myapp/config.json",
+]
+```
+
+## Installation
+
+```bash
+type custom 
+then wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/auto_backup.py
+or
+sudo cp auto_backup.py /usr/local/share/pwnagotchi/plugins/auto_backup.py
+sudo systemctl restart pwnagotchi
+```
+
+## How It Works
+
+- Creates compressed `.tar.gz` files with hostname + timestamp
+- Rotates backups automatically (keeps 3 most recent)
+- Stores metadata to avoid unnecessary backups
+- Runs in the background via Pwnagotchi's scheduler
+
+---
+
+If this plugin saves you time, [consider buying me a coffee](https://buymeacoffee.com/wpa2) ☕
+
 
 
 To restore after flashing 
