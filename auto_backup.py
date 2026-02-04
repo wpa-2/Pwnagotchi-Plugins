@@ -7,6 +7,7 @@ import time
 import socket
 import threading
 import glob
+from flask import render_template_string
 
 class AutoBackup(plugins.Plugin):
     __author__ = 'WPA2'
@@ -49,6 +50,7 @@ class AutoBackup(plugins.Plugin):
         self.lock = threading.Lock()
         self.backup_in_progress = False
         self.hostname = socket.gethostname()
+        self._agent = None
 
     def on_loaded(self):
         """Validate only required option: backup_location"""
@@ -131,136 +133,205 @@ class AutoBackup(plugins.Plugin):
     def _run_backup_thread(self, agent, existing_files):
         """Execute backup in separate thread."""
         try:
-            with self.lock:
-                # Get pwnagotchi name from config if available, fallback to hostname
-                global_config = getattr(agent, 'config', None)
-                if callable(global_config):
-                    global_config = global_config()
-                if global_config is None:
-                    global_config = {}
-                
-                pwnagotchi_name = global_config.get('main', {}).get('name', self.hostname)
-                backup_location = self.options['backup_location']
-                
-                # Create backup directory if it doesn't exist
-                if not os.path.exists(backup_location):
-                    try:
-                        os.makedirs(backup_location)
-                        logging.info(f"AUTO-BACKUP: Created backup directory: {backup_location}")
-                    except OSError as e:
-                        logging.error(f"AUTO-BACKUP: Failed to create backup directory: {e}")
-                        return
+            backup_location = self.options['backup_location']
+            
+            # Create backup directory if it doesn't exist
+            if not os.path.exists(backup_location):
+                try:
+                    os.makedirs(backup_location)
+                    logging.info(f"AUTO-BACKUP: Created backup directory: {backup_location}")
+                except OSError as e:
+                    logging.error(f"AUTO-BACKUP: Failed to create backup directory: {e}")
+                    return
 
-                # Add timestamp to filename
-                timestamp = time.strftime("%Y%m%d-%H%M%S")
-                backup_file = os.path.join(backup_location, f"{pwnagotchi_name}-backup-{timestamp}.tar.gz")
+            # Add timestamp to filename
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            backup_file = os.path.join(backup_location, f"{self.hostname}-backup-{timestamp}.tar.gz")
 
-                display = agent.view()
-                
-                logging.info(f"AUTO-BACKUP: Starting backup to {backup_file}...")
-                display.set('status', 'Backing up...')
-                display.update()
+            # Try to update display if agent is available
+            if agent:
+                try:
+                    display = agent.view()
+                    display.set('status', 'Backing up...')
+                    display.update()
+                except:
+                    pass
+            
+            logging.info(f"AUTO-BACKUP: Starting backup to {backup_file}...")
 
-                # Build command
-                command_list = list(self.commands)
-                command_list.append(backup_file)
+            # Build command
+            command_list = list(self.commands)
+            command_list.append(backup_file)
 
-                # Add exclusions
-                for pattern in self.exclude:
-                    command_list.append(f"--exclude={pattern}")
-                
-                # Add files to backup
-                command_list.extend(existing_files)
-                
-                # Execute backup command
-                process = subprocess.Popen(
-                    command_list,
-                    shell=False,
-                    stdin=None,
-                    stdout=open("/dev/null", "w"),
-                    stderr=subprocess.PIPE
-                )
-                _, stderr_output = process.communicate()
+            # Add exclusions
+            for pattern in self.exclude:
+                command_list.append(f"--exclude={pattern}")
+            
+            # Add files to backup
+            command_list.extend(existing_files)
+            
+            # Execute backup command
+            process = subprocess.Popen(
+                command_list,
+                shell=False,
+                stdin=None,
+                stdout=open("/dev/null", "w"),
+                stderr=subprocess.PIPE
+            )
+            _, stderr_output = process.communicate()
 
-                if process.returncode != 0:
-                    raise OSError(f"Backup command failed with code {process.returncode}: {stderr_output.decode('utf-8').strip()}")
+            if process.returncode != 0:
+                raise OSError(f"Backup command failed with code {process.returncode}: {stderr_output.decode('utf-8').strip()}")
 
-                logging.info(f"AUTO-BACKUP: Backup successful: {backup_file}")
-                
-                # Run cleanup after successful backup
-                self._cleanup_old_backups()
-                
-                display.set('status', 'Backup done!')
-                display.update()
-                
-                # Update status file timestamp
-                self.status.update()
-                
-                # Reset try counter on success
-                self.tries = 0
+            logging.info(f"AUTO-BACKUP: Backup successful: {backup_file}")
+            
+            # Run cleanup after successful backup
+            self._cleanup_old_backups()
+            
+            # Try to update display if agent is available
+            if agent:
+                try:
+                    display = agent.view()
+                    display.set('status', 'Backup done!')
+                    display.update()
+                except:
+                    pass
+            
+            # Update status file timestamp
+            self.status.update()
+            
+            # Reset try counter on success
+            self.tries = 0
 
         except Exception as e:
             self.tries += 1
             logging.error(f"AUTO-BACKUP: Backup error (attempt {self.tries}): {e}")
-            try:
-                display.set('status', 'Backup failed!')
-                display.update()
-            except:
-                pass
         finally:
             self.backup_in_progress = False
 
-    def on_internet_available(self, agent):
-        """Triggered when internet becomes available."""
+    def on_ready(self, agent):
+        """Called when Pwnagotchi is ready. Set up backup scheduler."""
         if not self.ready:
             return
         
-        if self.tries >= 3:  # Hardcoded max_tries
-            logging.debug(f"AUTO-BACKUP: Max tries (3) exceeded, skipping backup")
-            return
-
-        if not self.is_backup_due():
-            now = time.time()
-            # Log status once per hour to avoid spam
-            if now - self.last_not_due_logged > 3600:
-                try:
-                    last_backup = os.path.getmtime(self.status_file)
-                    next_backup = self.interval_seconds - (now - last_backup)
-                    logging.debug(f"AUTO-BACKUP: Backup not due yet. Next backup in ~{int(next_backup/3600)}h {int((next_backup%3600)/60)}m")
-                except:
-                    pass
-                self.last_not_due_logged = now
-            return
-
-        # Check if files exist
-        existing_files = list(filter(os.path.exists, self.files))
+        self._agent = agent
         
-        # Add include paths if specified
+        # Start background scheduler thread
+        scheduler_thread = threading.Thread(
+            target=self._backup_scheduler_loop,
+            daemon=True,
+            name="AutoBackupScheduler"
+        )
+        scheduler_thread.start()
+        
+        logging.info("AUTO-BACKUP: Periodic backup scheduler started")
+    
+    def on_webhook(self, path, request):
+        """Handle web UI requests."""
+        if request.method == "GET":
+            if path == "/" or not path:
+                action_path = request.path if request.path.endswith("/backup") else "%s/backup" % request.path
+                ret = '<html><head><title>AUTO Backup</title><meta name="csrf_token" content="{{ csrf_token() }}"></head><body>'
+                ret += '<h1>AUTO Backup</h1>'
+                ret += '<p>Status: '
+                if self.backup_in_progress:
+                    ret += '<b>Backup in progress...</b>'
+                else:
+                    ret += '<b>Ready</b>'
+                ret += '</p>'
+                ret += '<form method="POST" action="%s">' % action_path
+                ret += '<input id="csrf_token" name="csrf_token" type="hidden" value="{{ csrf_token() }}">'
+                ret += '<input type="submit" value="Start Manual Backup" style="padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">'
+                ret += '</form>'
+                ret += '<hr>'
+                ret += '<h2>Configuration</h2>'
+                ret += '<table border="1" cellpadding="5">'
+                ret += '<tr><td><b>Backup Location:</b></td><td>' + self.options.get('backup_location', 'Not set') + '</td></tr>'
+                ret += '<tr><td><b>Interval:</b></td><td>' + str(self.interval_seconds // 60) + ' minutes</b></td></tr>'
+                ret += '<tr><td><b>Max Backups:</b></td><td>' + str(self.max_backups) + '</td></tr>'
+                ret += '<tr><td><b>Include Paths:</b></td><td>' + (', '.join(self.include) if self.include else 'None') + '</td></tr>'
+                ret += '</table>'
+                ret += '</body></html>'
+                return render_template_string(ret)
+        
+        elif request.method == "POST":
+            if path == "backup" or path == "/backup":
+                result = self.manual_backup(self._agent)
+                ret = '<html><head><title>AUTO Backup</title><meta name="csrf_token" content="{{ csrf_token() }}"></head><body>'
+                ret += '<h1>AUTO Backup</h1>'
+                ret += '<p><b>' + result['status'] + '</b></p>'
+                ret += '<a href="/plugins/auto_backup/">Back</a>'
+                ret += '</body></html>'
+                return render_template_string(ret)
+        
+        return "Not found"
+    
+    def _backup_scheduler_loop(self):
+        """Background thread that checks if backup is due every minute."""
+        while True:
+            try:
+                if self.ready:
+                    agent = getattr(self, '_agent', None)
+                    self._periodic_backup_check(agent)
+                time.sleep(60)
+            except Exception as e:
+                logging.error(f"AUTO-BACKUP: Scheduler error: {e}")
+    
+    def _get_backup_files(self):
+        """Collect all files to backup."""
+        existing_files = list(filter(os.path.exists, self.files))
         if self.include:
             for path in self.include:
                 if os.path.exists(path):
                     existing_files.append(path)
                     logging.debug(f"AUTO-BACKUP: Added include path: {path}")
-                else:
-                    logging.debug(f"AUTO-BACKUP: Include path does not exist, skipping: {path}")
+        return existing_files
+    
+    def _periodic_backup_check(self, agent=None):
+        """Periodic backup check."""
+        if agent is None:
+            agent = getattr(self, '_agent', None)
         
+        if not self.ready or self.backup_in_progress:
+            return
+        
+        if self.tries >= 3:
+            return
+        
+        if not self.is_backup_due():
+            return
+        
+        existing_files = self._get_backup_files()
         if not existing_files:
             logging.warning("AUTO-BACKUP: No files to backup exist")
             return
-
-        # Prevent multiple simultaneous backups
-        if self.backup_in_progress or self.lock.locked():
-            logging.debug("AUTO-BACKUP: Backup already in progress, skipping")
-            return
-
-        self.backup_in_progress = True
         
-        # Start backup in daemon thread
+        self.backup_in_progress = True
         backup_thread = threading.Thread(
-            target=self._run_backup_thread, 
+            target=self._run_backup_thread,
             args=(agent, existing_files),
             daemon=True,
             name="AutoBackupThread"
         )
         backup_thread.start()
         logging.debug("AUTO-BACKUP: Backup thread started")
+    
+    def manual_backup(self, agent):
+        """Manually trigger a backup."""
+        if self.backup_in_progress:
+            return {"status": "Backup already in progress"}
+        
+        existing_files = self._get_backup_files()
+        if not existing_files:
+            return {"status": "No files to backup"}
+        
+        self.backup_in_progress = True
+        backup_thread = threading.Thread(
+            target=self._run_backup_thread,
+            args=(agent, existing_files),
+            daemon=True,
+            name="AutoBackupThread"
+        )
+        backup_thread.start()
+        logging.info("AUTO-BACKUP: Manual backup triggered")
+        return {"status": "Backup started - check logs for details"}
