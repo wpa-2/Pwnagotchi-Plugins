@@ -56,29 +56,37 @@ class AutoBackup(plugins.Plugin):
             logging.error("AUTO-BACKUP: Option 'backup_location' is not set.")
             return
 
-        # Get hostname for backup filenames
         self.hostname = socket.gethostname()
         
-        # Apply sensible defaults
-        self.options.setdefault('files', self.DEFAULT_FILES)
-        self.options.setdefault('interval_seconds', self.DEFAULT_INTERVAL_SECONDS)
-        self.options.setdefault('max_backups_to_keep', self.DEFAULT_MAX_BACKUPS)
-        self.options.setdefault('exclude', self.DEFAULT_EXCLUDE)
-        self.options.setdefault('commands', ["tar", "czf"])
-        self.options.setdefault('include', [])
+        # Read config with internal defaults - DO NOT modify self.options
+        self.files = self.options.get('files', self.DEFAULT_FILES)
+        self.interval_seconds = self.options.get('interval_seconds', self.DEFAULT_INTERVAL_SECONDS)
+        self.max_backups = self.options.get('max_backups_to_keep', self.DEFAULT_MAX_BACKUPS)
+        self.exclude = self.options.get('exclude', self.DEFAULT_EXCLUDE)
+        self.include = self.options.get('include', [])
+        
+        # Handle commands: if old format, use correct default internally
+        commands = self.options.get('commands', ["tar", "czf"])
+        if isinstance(commands, str) or (isinstance(commands, list) and len(commands) == 1 and isinstance(commands[0], str) and '{' in str(commands)):
+            logging.warning("AUTO-BACKUP: Old command format detected in config, using default: tar czf")
+            self.commands = ["tar", "czf"]
+        elif not commands:
+            self.commands = ["tar", "czf"]
+        else:
+            self.commands = commands
         
         # Validate include paths if specified
-        if self.options['include']:
-            if not isinstance(self.options['include'], list):
-                self.options['include'] = [self.options['include']]
+        if self.include:
+            if not isinstance(self.include, list):
+                self.include = [self.include]
             
-            for path in self.options['include']:
+            for path in self.include:
                 if not os.path.exists(path):
                     logging.warning(f"AUTO-BACKUP: include path '{path}' does not exist, will skip if still missing at backup time")
             
         self.ready = True
-        include_msg = f", includes: {len(self.options['include'])} additional path(s)" if self.options['include'] else ""
-        logging.info(f"AUTO-BACKUP: Plugin loaded for host '{self.hostname}'. Interval: 60min, Backups kept: {self.options['max_backups_to_keep']}{include_msg}")
+        include_msg = f", includes: {len(self.include)} additional path(s)" if self.include else ""
+        logging.info(f"AUTO-BACKUP: Plugin loaded for host '{self.hostname}'. Interval: 60min, Backups kept: {self.max_backups}{include_msg}")
 
     def is_backup_due(self):
         """Check if backup is due based on interval."""
@@ -86,13 +94,13 @@ class AutoBackup(plugins.Plugin):
             last_backup = os.path.getmtime(self.status_file)
         except OSError:
             return True
-        return (time.time() - last_backup) >= self.options['interval_seconds']
+        return (time.time() - last_backup) >= self.interval_seconds
 
     def _cleanup_old_backups(self):
         """Deletes the oldest backups if we exceed the limit."""
         try:
             backup_dir = self.options['backup_location']
-            max_keep = self.options['max_backups_to_keep']
+            max_keep = self.max_backups
             
             # Filter by this device's hostname
             search_pattern = os.path.join(backup_dir, f"{self.hostname}-backup-*.tar.gz")
@@ -154,11 +162,11 @@ class AutoBackup(plugins.Plugin):
                 display.update()
 
                 # Build command
-                command_list = list(self.options['commands'])
+                command_list = list(self.commands)
                 command_list.append(backup_file)
 
                 # Add exclusions
-                for pattern in self.options['exclude']:
+                for pattern in self.exclude:
                     command_list.append(f"--exclude={pattern}")
                 
                 # Add files to backup
@@ -217,7 +225,7 @@ class AutoBackup(plugins.Plugin):
             if now - self.last_not_due_logged > 3600:
                 try:
                     last_backup = os.path.getmtime(self.status_file)
-                    next_backup = self.options['interval_seconds'] - (now - last_backup)
+                    next_backup = self.interval_seconds - (now - last_backup)
                     logging.debug(f"AUTO-BACKUP: Backup not due yet. Next backup in ~{int(next_backup/3600)}h {int((next_backup%3600)/60)}m")
                 except:
                     pass
@@ -225,12 +233,11 @@ class AutoBackup(plugins.Plugin):
             return
 
         # Check if files exist
-        existing_files = list(filter(os.path.exists, self.options['files']))
+        existing_files = list(filter(os.path.exists, self.files))
         
         # Add include paths if specified
-        include_paths = self.options.get('include', [])
-        if include_paths:
-            for path in include_paths:
+        if self.include:
+            for path in self.include:
                 if os.path.exists(path):
                     existing_files.append(path)
                     logging.debug(f"AUTO-BACKUP: Added include path: {path}")
