@@ -44,7 +44,7 @@ Log into your Pwnagotchi via SSH or a direct connection.
 
 2.  **Install Tailscale:**
     ```bash
-    curl -fsSL [https://tailscale.com/install.sh](https://tailscale.com/install.sh) | sh
+    curl -fsSL https://tailscale.com/install.sh | sh
     ```
     **Important:** You do **not** need to run `sudo tailscale up` manually. The plugin will handle authentication using an auth key.
 
