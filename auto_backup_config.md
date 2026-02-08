@@ -46,11 +46,8 @@ include = [
 ## Installation
 
 ```bash
-type custom 
-then wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/auto_backup.py
-or
-sudo cp auto_backup.py /usr/local/share/pwnagotchi/plugins/auto_backup.py
-sudo systemctl restart pwnagotchi
+sudo wget -O /usr/local/share/pwnagotchi/custom-plugins/auto_backup.py / 
+https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/auto_backup.py
 ```
 
 ## How It Works
