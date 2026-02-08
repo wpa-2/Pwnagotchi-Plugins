@@ -1,8 +1,8 @@
 # Pwnagotchi Configuration Guide 🚀
 
-Welcome to the ultimate **Pwnagotchi Configuration Guide**! This `README.md` explains every option in the `config.toml` file, helping you customize your AI-powered Wi-Fi buddy. 😎
+Welcome to the ultimate **Pwnagotchi Configuration Guide**! This guide explains every option in the config.toml file,
 
-> Pwnagotchi is a DIY A2C-based AI that learns from its surrounding Wi-Fi environment to capture WPA2 handshakes. This file is its brain—let's dive in! 🛠️
+> Pwnagotchi was a DIY A2C-based AI that learns from its surrounding Wi-Fi environment to capture WPA2 handshakes. This file is its brain—let's dive in! 🛠️
 
 ---
 
