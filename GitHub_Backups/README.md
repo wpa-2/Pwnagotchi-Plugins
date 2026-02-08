@@ -93,7 +93,7 @@ Copy the SSH URL: `git@github.com:YOUR_USERNAME/pwnagotchi-backup.git`
 
 ```bash
 sudo wget -O /usr/local/share/pwnagotchi/custom-plugins/git_backup.py \
-  https://raw.githubusercontent.com/wpa-2/pwnagotchi-plugins/main/git_backup.py
+  https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/GitHub_Backups/git_backup.py
 ```
 
 ### Step 6: Configure
@@ -402,4 +402,4 @@ WPA2
 
 - [Pwnagotchi](https://pwnagotchi.ai/)
 - [Plugin Repository](https://github.com/wpa-2/pwnagotchi-plugins)
-- [Buy me a Coffee](https://github.com/wpa-2/pwnagotchi-plugins)
+- [Buy me a Coffee](https://buymeacoffee.com/wpa2)
