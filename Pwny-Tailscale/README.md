@@ -86,14 +86,13 @@ The plugin will use an auth key to add your Pwnagotchi to your Tailnet automatic
 
 2.  Add the following configuration block, filling in your specific details.
     ```toml
-    main.plugins.tailscale.enabled = true
-    main.plugins.tailscale.auth_key = "tskey-auth-YOUR-KEY-HERE"
-    main.plugins.tailscale.server_tailscale_ip = "100.X.X.X" # <-- Your server's Tailscale IP
-    main.plugins.tailscale.server_user = "your-server-user"  # <-- The SSH username on your server
-    main.plugins.tailscale.handshake_dir = "/path/to/remote/handshakes/" # <-- The destination folder on your server
-    
-    # Optional: Set a custom device name for the Pwnagotchi in your Tailnet
-    main.plugins.tailscale.hostname = "pwnagotchi"
+[main.plugins.tailscale]
+enabled = true
+auth_key = "tskey-auth-YOUR-KEY-HERE"
+server_tailscale_ip = "100.X.X.X" # Your server's Tailscale IP
+server_user = "your-server-user"  # The SSH username on your server
+handshake_dir = "/path/to/remote/handshakes/" # Destination folder on your server
+hostname = "pwnagotchi" # Custom device name in Tailnet
     ```
 
 ---
