@@ -5,7 +5,7 @@ set -e
 
 CONFIG_FILE="/etc/pwnagotchi/config.toml"
 PLUGIN_DIR="/usr/local/share/pwnagotchi/custom-plugins"
-REMOTE_URL="https://raw.githubusercontent.com/wpa-2/TelePwn/refs/heads/main/telepwn.py"
+REMOTE_URL="https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/main/TelePwn/telepwn.py"
 
 echo "[ + ] Checking internet connection..."
 if ! wget -q --spider http://google.com; then
@@ -68,7 +68,9 @@ if ! grep -q "main.custom_plugins" "$CONFIG_FILE"; then
     echo -e "\nmain.custom_plugins = \"$PLUGIN_DIR\"" >> "$CONFIG_FILE"
 fi
 
-if ! grep -q "main.plugins.telepwn" "$CONFIG_FILE"; then
+# Check if [main.plugins.telepwn] section exists
+if ! grep -q "\[main.plugins.telepwn\]" "$CONFIG_FILE"; then
+    # Section doesn't exist, create it
     cat >> "$CONFIG_FILE" <<EOF
 
 [main.plugins.telepwn]
@@ -79,11 +81,27 @@ send_message = true
 auto_start = true
 EOF
 else
-    sed -i "/main.plugins.telepwn.enabled/c\main.plugins.telepwn.enabled = true" "$CONFIG_FILE"
-    sed -i "/main.plugins.telepwn.bot_token/c\main.plugins.telepwn.bot_token = \"$BOT_TOKEN\"" "$CONFIG_FILE"
-    sed -i "/main.plugins.telepwn.chat_id/c\main.plugins.telepwn.chat_id = \"$CHAT_ID\"" "$CONFIG_FILE"
-    sed -i "/main.plugins.telepwn.send_message/c\main.plugins.telepwn.send_message = true" "$CONFIG_FILE"
-    sed -i "/main.plugins.telepwn.auto_start/c\main.plugins.telepwn.auto_start = true" "$CONFIG_FILE"
+    # Section exists, update values using awk for proper TOML section handling
+    # This approach preserves the section structure and updates only the values
+    awk -v bot_token="$BOT_TOKEN" -v chat_id="$CHAT_ID" '
+    BEGIN { in_telepwn = 0 }
+    
+    # Detect when we enter the [main.plugins.telepwn] section
+    /^\[main\.plugins\.telepwn\]/ { in_telepwn = 1; print; next }
+    
+    # Detect when we enter a different section
+    /^\[/ && !/^\[main\.plugins\.telepwn\]/ { in_telepwn = 0 }
+    
+    # Update values within the telepwn section
+    in_telepwn && /^enabled\s*=/ { print "enabled = true"; next }
+    in_telepwn && /^bot_token\s*=/ { print "bot_token = \"" bot_token "\""; next }
+    in_telepwn && /^chat_id\s*=/ { print "chat_id = \"" chat_id "\""; next }
+    in_telepwn && /^send_message\s*=/ { print "send_message = true"; next }
+    in_telepwn && /^auto_start\s*=/ { print "auto_start = true"; next }
+    
+    # Print all other lines unchanged
+    { print }
+    ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
 fi
 
 echo "[ + ] Remounting filesystem as read-only..."
@@ -93,3 +111,4 @@ echo "[ + ] Restarting Pwnagotchi..."
 systemctl restart pwnagotchi
 
 echo "[ * ] Installation complete!"
+echo "[ * ] Send /start to your bot to begin!"
