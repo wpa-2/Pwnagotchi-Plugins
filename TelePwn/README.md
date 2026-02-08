@@ -23,7 +23,7 @@ Whether you're tweaking plugins or checking logs, **TelePwn** makes it simple, f
 
 ## 🎥 See It in Action
 
-![TelePwn Telegram Menu](images/telegram_menu_mockup.png)
+![TelePwn Telegram Menu](images/a.png)
 
 ---
 
