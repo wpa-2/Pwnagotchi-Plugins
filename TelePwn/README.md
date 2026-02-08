@@ -2,7 +2,7 @@
 
 [![Buy Me a Coffee](https://img.shields.io/badge/☕-Buy%20Me%20a%20Coffee-yellow)](https://buymeacoffee.com/wpa2)
 [![Telegram Chat](https://img.shields.io/badge/Join-Telegram-blue.svg)](https://t.me/yourtelegramchannel)
-[![Version](https://img.shields.io/badge/Version-2025-green.svg)](https://github.com/your-username/your-repo)
+[![Version](https://img.shields.io/badge/Version-2025-green.svg)](https://github.com/wpa-2/Pwnagotchi-Plugins)
 
 **TelePwn** is a powerful Pwnagotchi plugin that brings your device to your fingertips through a Telegram bot.  
 Remotely manage your Pwnagotchi, monitor stats, capture handshakes, schedule tasks, and integrate with external services — all from your phone or computer.
