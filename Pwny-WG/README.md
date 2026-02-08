@@ -75,29 +75,34 @@ sudo ssh-copy-id -i /root/.ssh/id_ed25519.pub pi@192.168.1.50
 
 Edit `/etc/pwnagotchi/config.toml`:
 
-```toml
-# Enable plugin
-main.plugins.wireguard.enabled = true
-main.plugins.wireguard.wg_config_path = "/tmp/wg0.conf"
+```
+[main.plugins.wireguard]
+enabled = true
+wg_config_path = "/tmp/wg0.conf"
 
-# Keys from your .conf file
-main.plugins.wireguard.private_key = "YOUR_CLIENT_PRIVATE_KEY"
-main.plugins.wireguard.peer_public_key = "YOUR_SERVER_PUBLIC_KEY"
-main.plugins.wireguard.preshared_key = "YOUR_PRESHARED_KEY"  # Optional
+# Keys
+private_key = "YOUR_CLIENT_PRIVATE_KEY"
+peer_public_key = "YOUR_SERVER_PUBLIC_KEY"
+preshared_key = "YOUR_PRESHARED_KEY" # Optional
 
-# Network (must be unique per device!)
-main.plugins.wireguard.address = "10.0.0.5/24"
-main.plugins.wireguard.dns = "9.9.9.9"
-main.plugins.wireguard.peer_endpoint = "your-home-ip:51820"
+# Network Settings
+address = "10.0.0.5/24"
+dns = "9.9.9.9"
+peer_endpoint = "your-home-ip:51820"
 
-# Sync settings
-main.plugins.wireguard.server_user = "pi"
-main.plugins.wireguard.server_port = 22
-main.plugins.wireguard.handshake_dir = "/home/pi/handshakes/"
+# Handshake Sync Settings
+server_user = "pi"
+server_port = 22
+handshake_dir = "/home/pi/handshakes/"
+sync_interval = 600
+startup_delay_secs = 60
 
-# Optional
-main.plugins.wireguard.startup_delay_secs = 60
-main.plugins.wireguard.sync_interval = 600
+# Advanced Sync Options (Performance & Health)
+bwlimit = 500              # Bandwidth limit (KB/s) - good for cellular
+compress_level = 6         # Compression level (0-9)
+max_retries = 5            # Max retries for connection/sync
+health_check_enabled = true
+
 ```
 
 Restart:
@@ -149,24 +154,6 @@ ping YOUR_SERVER_VPN_IP
 Each device needs:
 - Unique `address` (10.0.0.5, 10.0.0.6, etc.)
 - Unique `private_key` (create separate client profiles)
-
----
-
-## Optional Settings
-
-```toml
-# Bandwidth limit (KB/s) - good for cellular
-main.plugins.wireguard.bwlimit = 500
-
-# Compression level (0-9)
-main.plugins.wireguard.compress_level = 6
-
-# Max retries
-main.plugins.wireguard.max_retries = 5
-
-# Health checks
-main.plugins.wireguard.health_check_enabled = true
-```
 
 ---
 
