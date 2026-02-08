@@ -44,7 +44,7 @@ _Default credentials: `pi` / `raspberry` (change your password!)._
 ### Step 2: Run the Install Script
 
 ```bash
-wget https://raw.githubusercontent.com/wpa-2/TelePwn/refs/heads/main/install_telepwn.sh
+wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/main/TelePwn/install_telepwn.sh
 chmod +x install_telepwn.sh
 sudo ./install_telepwn.sh
 ```
