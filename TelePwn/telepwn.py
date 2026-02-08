@@ -258,7 +258,7 @@ class TelePwn(plugins.Plugin):
 
         bot.send_message(
             chat_id=int(self.options["chat_id"]),
-            text="\ud83d\udd90 TelePwn 2025 Edition is online!",
+            text=f"🖐 TelePwn v{self.__version__} is online!",
             reply_markup=InlineKeyboardMarkup(INITIAL_MENU),
             parse_mode="HTML",
         )
@@ -387,7 +387,7 @@ class TelePwn(plugins.Plugin):
     def start(self, agent, update, context):
         if update.callback_query and update.callback_query.data == "cancel":
             self.send_message(update, context, "\u2705 Action cancelled.")
-        self.send_message(update, context, "\ud83d\udd90 TelePwn 2025 Edition\nSelect an option:", MAIN_MENU)
+        self.send_message(update, context, "\ud83d\udd90 f"🖐 TelePwn v{self.__version__}\nSelect an option:", MAIN_MENU)
 
     def button_handler(self, agent, update, context):
         if update.effective_chat.id != int(self.options.get("chat_id")):
@@ -421,7 +421,7 @@ class TelePwn(plugins.Plugin):
             "plugins": self.plugins_menu,
             "cancel": self.start,
             "show_menu": self.start,
-            "back_to_initial": lambda a, u, c: self.send_message(u, c, "\ud83d\udd90 TelePwn 2025 Edition", INITIAL_MENU),
+            "back_to_initial": lambda a, u, c: self.send_message(u, c, "\ud83d\udd90 f"🖐 TelePwn v{self.__version__}", INITIAL_MENU),
         }
 
         if query.data.startswith("toggle_plugin_"):
