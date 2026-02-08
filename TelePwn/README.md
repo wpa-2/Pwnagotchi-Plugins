@@ -1,7 +1,8 @@
 # 🚀 TelePwn - Control Your Pwnagotchi via Telegram
 
 [![Buy Me a Coffee](https://img.shields.io/badge/☕-Buy%20Me%20a%20Coffee-yellow)](https://buymeacoffee.com/wpa2)
-[![Telegram](https://img.shields.io/badge/Join-Telegram-blue.svg)](https://t.me/Pwnagotchi_UK)
+[![Telegram Chat](https://img.shields.io/badge/Chat-Telegram-blue.svg)](https://t.me/Pwnagotchi_UK_Chat)
+[![Telegram Channel](https://img.shields.io/badge/Updates-Telegram-blue.svg)](https://t.me/Pwnagotchi_UK)
 [![Version](https://img.shields.io/badge/Version-2.0-green.svg)](https://github.com/wpa-2/Pwnagotchi-Plugins)
 
 **TelePwn** is a powerful Pwnagotchi plugin that brings your device to your fingertips through a Telegram bot.  
