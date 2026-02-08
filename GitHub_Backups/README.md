@@ -107,8 +107,9 @@ sudo nano /etc/pwnagotchi/config.toml
 Add (minimum required):
 
 ```toml
-main.plugins.git_backup.enabled = true
-main.plugins.git_backup.github_repo = "git@github.com:YOUR_USERNAME/YOUR_REPO.git"
+[main.plugins.git_backup]
+enabled = true
+github_repo = "git@github.com:myuser/pwnagotchi-backup.git"
 ```
 
 ### Step 7: Restart & Verify
@@ -144,21 +145,23 @@ You should see:
 ### Minimal Config
 
 ```toml
-main.plugins.git_backup.enabled = true
-main.plugins.git_backup.github_repo = "git@github.com:USER/REPO.git"
+[main.plugins.git_backup]
+enabled = true
+github_repo = "git@github.com:myuser/pwnagotchi-backup.git"
 ```
 
 ### Full Config Example
 
 ```toml
-main.plugins.git_backup.enabled = true
-main.plugins.git_backup.github_repo = "git@github.com:myuser/pwnagotchi-backup.git"
-main.plugins.git_backup.interval = 6
-main.plugins.git_backup.ssh_key = "/home/pi/.ssh/id_rsa"
-main.plugins.git_backup.extra_files = [
+[main.plugins.git_backup]
+enabled = true
+github_repo = "git@github.com:myuser/pwnagotchi-backup.git"
+interval = 6
+ssh_key = "/home/pi/.ssh/id_rsa"
+extra_files = [
     "/root/my-custom-script.sh",
     "/home/pi/my-data/",
-    "/etc/my-custom-config.conf"
+    "/etc/my-custom-config.conf",
 ]
 ```
 
