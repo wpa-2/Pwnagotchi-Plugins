@@ -50,11 +50,12 @@ The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of 
 Get instant, beautifully formatted notifications about your Pwnagotchi's conquests via Discord.
 
 ### ⚙️ Configuration Example:
+```
 [main.plugins.discord]
 enabled = true
 webhook_url = "YOUR_DISCORD_WEBHOOK_URL"
 wigle_api_key = "ENCODED_API_KEY"
-
+```
 ---
 
 <a name="web2ssh"></a>
