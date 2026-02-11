@@ -64,7 +64,7 @@ class WireGuard(plugins.Plugin):
         self.options.setdefault('sync_interval', 600)
         self.options.setdefault('connection_timeout', 10)
         self.options.setdefault('max_retries', 5)
-        self.options.setdefault('bwlimit', None)  # KB/s, None = unlimited
+        self.options.setdefault('bwlimit', 0)  # KB/s, None = unlimited
         self.options.setdefault('compress_level', 6)
         self.options.setdefault('persistent_keepalive', 25)
         self.options.setdefault('health_check_enabled', True)
