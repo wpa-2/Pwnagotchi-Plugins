@@ -93,6 +93,7 @@ server_tailscale_ip = "100.X.X.X" # Your server's Tailscale IP
 server_user = "your-server-user"  # The SSH username on your server
 handshake_dir = "/path/to/remote/handshakes/" # Destination folder on your server
 hostname = "pwnagotchi" # Custom device name in Tailnet
+ui_position = [120, 76]
 ```
 
 ---
