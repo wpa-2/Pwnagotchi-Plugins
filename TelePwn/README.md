@@ -1,272 +1,168 @@
-# 🚀 TelePwn - Control Your Pwnagotchi via Telegram
+# TelePwn v2.0
 
-[![Buy Me a Coffee](https://img.shields.io/badge/☕-Buy%20Me%20a%20Coffee-yellow)](https://buymeacoffee.com/wpa2)
-[![Telegram Chat](https://img.shields.io/badge/Chat-Telegram-blue.svg)](https://t.me/Pwnagotchi_UK_Chat)
-[![Telegram Channel](https://img.shields.io/badge/Updates-Telegram-blue.svg)](https://t.me/Pwnagotchi_UK)
-[![Version](https://img.shields.io/badge/Version-2.0-green.svg)](https://github.com/wpa-2/Pwnagotchi-Plugins)
+> Control your Pwnagotchi via Telegram - Python 3.13 Compatible
 
-**TelePwn** is a powerful Pwnagotchi plugin that brings your device to your fingertips through a Telegram bot.  
-Remotely manage your Pwnagotchi, monitor stats, capture handshakes, schedule tasks, and integrate with external services — all from your phone or computer.
-
-Whether you're tweaking plugins or checking logs, **TelePwn** makes it simple, fast, and secure.
-
----
-
-## 🌟 Why Use TelePwn?
-
-- 🛰️ **Remote Control**: Reboot, shutdown, or toggle plugins from anywhere.
-- 📊 **Real-Time Insights**: Get screenshots, system stats, and handshake counts instantly.
-- 🔄 **Automation**: Schedule backups or reboots to keep your Pwnagotchi humming.
-- 🌐 **Integration**: Send alerts to Discord or APIs using webhooks.
-- 🤖 **User-Friendly**: Intuitive Telegram menus guide you through every action.
-
----
+[![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
+[![Telegram Bot API](https://img.shields.io/badge/Telegram%20Bot%20API-20.x-blue.svg)](https://github.com/python-telegram-bot/python-telegram-bot)
+[![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 
 ## 🎥 See It in Action
-
 ![TelePwn Telegram Menu](images/a.png)
 
----
+## ✨ Features
 
-## ⚡ Installation
+- 📱 **Full Remote Control** - Manage your Pwnagotchi from anywhere via Telegram
+- 🤝 **Auto-Send Handshakes** - .pcap files automatically sent to Telegram (cloud backup!)
+- 📸 **Screenshot Sharing** - Take and share screenshots with the community
+- 🎉 **Milestone Celebrations** - Unlock achievements at 100, 500, 1K, 5K, 10K handshakes
+- 🔄 **System Management** - Reboot, shutdown, restart modes, view stats
+- 📊 **Live Monitoring** - Uptime, handshakes, CPU, memory, temperature
+- 🔌 **Plugin Control** - Enable/disable plugins remotely
 
-Get TelePwn up and running in minutes with our automated install script.
-
-### Step 1: SSH into Your Pwnagotchi
-
-```bash
-ssh pi@<pwnagotchi-ip>
-```
-_Replace `<pwnagotchi-ip>` with your Pwnagotchi’s IP (e.g., `10.0.0.2`)._  
-_Default credentials: `pi` / `raspberry` (change your password!)._
-
----
-
-### Step 2: Run the Install Script
+## 📦 Quick Install
 
 ```bash
-wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/main/TelePwn/install_telepwn.sh
-chmod +x install_telepwn.sh
-sudo ./install_telepwn.sh
+cd /tmp
+sudo wget https://YOUR_REPO/TelePwn/install.sh
+sudo bash install.sh
 ```
 
-The script automatically:
-- Installs dependencies (python-telegram-bot, requests, psutil, schedule)
-- Downloads the TelePwn plugin
-- Prompts you for bot token and chat ID
-- Updates `/etc/pwnagotchi/config.toml`
-- Restarts the Pwnagotchi daemon
+The installer will:
+- ✅ Detect and remove old versions automatically
+- ✅ Install Python 3.13 compatible dependencies
+- ✅ Guide you through bot setup
+- ✅ Configure community features (optional)
 
----
+## 🎯 What You Get
 
-### Step 3: Set Up Your Telegram Bot
+### Handshake Notifications
+Every time you capture a handshake:
+```
+🤝 New handshake: HomeWiFi - aa:bb:cc:dd:ee:ff
 
-- Create a bot with [@BotFather](https://t.me/BotFather):
-  - Send `/newbot` and follow prompts.
-  - Copy your bot token.
+📎 HomeWiFi_aabbccddeeff.pcap [45 KB]
+```
+Download the .pcap directly from Telegram!
 
-- Get your Chat ID with [@userinfobot](https://t.me/userinfobot):
-  - Start a chat and grab your numeric ID.
+### Bot Commands
+```
+/start or /menu    Main menu with buttons
+/help             Show all commands
+/screenshot       Take screenshot
+/handshakes       Handshake count
+/uptime           System uptime
+/stats            CPU, memory, temperature
+/backup           Create and send backup
+/plugins          Manage plugins
+/reboot           Reboot device
+```
 
----
+All commands include back buttons - no typing needed!
 
-### Step 4: Test It
+## ⚙️ Configuration
 
-Open Telegram ➔ Message your bot `/start` ➔ Tap the **Menu** button! 🎯
+Edit `/etc/pwnagotchi/config.toml`:
 
----
+```toml
+[main.plugins.telepwn]
+enabled = true
+bot_token = "YOUR_BOT_TOKEN"              # Get from @BotFather
+chat_id = "YOUR_CHAT_ID"                  # Get from @userinfobot
+send_message = true                        # Enable notifications
+send_handshake_file = true                 # Auto-send .pcap files
+auto_start = true                          # Start bot automatically
+community_enabled = false                  # Optional: Enable sharing
+community_chat_id = "@Pwnagotchi_UK_Chat" # Optional: Your group/channel
+```
 
-## 🛠️ Commands
+### Getting Your Bot Token
+1. Message [@BotFather](https://t.me/BotFather) in Telegram
+2. Send `/newbot` and follow prompts
+3. Copy the token
 
-### 📜 Menu and Core
+### Getting Your Chat ID
+1. Message [@userinfobot](https://t.me/userinfobot) in Telegram
+2. Copy your ID number
 
-| Command | Description |
-|:--------|:------------|
-| `/start` | Open main menu |
-| `/reboot` | Reboot device (manual or auto mode) |
-| `/shutdown` | Safe shutdown |
-| `/uptime` | Show device uptime |
-| `/logs` | Show last 50 log lines |
-| `/clear` | Clear the display |
-| `/kill` | Kill the daemon & reload plugins |
+## 🌟 Community Features
 
----
+Join the UK Pwnagotchi community and:
+- Share screenshots with other Pwnagotchi users
+- Celebrate milestone achievements together
+- Connect with the community
 
-### 📡 Handshakes and Files
+**Privacy:** Completely opt-in. You control what gets shared.
 
-| Command | Description |
-|:--------|:------------|
-| `/handshakes` | Show number of captured handshakes |
-| `/screenshot` | Send current screen as an image |
-| `/backup` | Backup key files and send |
-| `/files list` | List handshake files |
-| `/files download <filename>` | Download a handshake file |
-| `/files upload` | Upload a handshake file (pcap/pcapng) |
+**Join:** [https://t.me/Pwnagotchi_UK_Chat](https://t.me/Pwnagotchi_UK_Chat)
 
----
-
-### ⚙️ Plugins and Daemon
-
-| Command | Description |
-|:--------|:------------|
-| `/plugins` | List available plugins |
-| `/toggle <plugin_name>` | Enable/disable a plugin |
-| `/restart_manual` | Restart daemon into manual mode |
-| `/restart_auto` | Restart daemon into auto mode |
-
----
-
-### 🌐 Pwngrid Actions
-
-| Command | Description |
-|:--------|:------------|
-| `/pwngrid send <id> <message>` | Send message to Pwngrid peer |
-| `/pwngrid clear` | Clear Pwngrid inbox |
-| `/inbox` | View Pwngrid messages |
-
----
-
-### 🔥 Webhooks
-
-TelePwn supports creating powerful webhooks that trigger actions remotely.
-
-**Supported types:**
-- 📣 `notify` - Send a message back to Telegram
-- 🛠️ `shell` - Run a shell command on the Pwnagotchi
-- 🌍 `http` - Send an HTTP request (e.g., Discord webhook)
-- 🔀 `plugin_toggle` - Enable/disable a plugin
-
----
-
-### ➡️ Set a Webhook
+## 🔧 Manual Installation
 
 ```bash
-/setwebhook <action> <url> [type] [request/command]
+# 1. Install dependencies
+pip3 install python-telegram-bot pytz --upgrade --break-system-packages
+
+# 2. Install plugin
+sudo wget https://YOUR_REPO/TelePwn/telepwn.py -O /usr/local/share/pwnagotchi/custom-plugins/telepwn.py
+
+# 3. Configure (edit config.toml)
+sudo nano /etc/pwnagotchi/config.toml
+
+# 4. Restart
+sudo systemctl restart pwnagotchi
 ```
 
-| Parameter | Meaning |
-|:----------|:--------|
-| `action` | Name for the webhook |
-| `url` | Target URL (use `none` for shell/plugin_toggle) |
-| `type` | `notify`, `shell`, `http`, or `plugin_toggle` |
-| `request/command` | Extra command or request body if needed |
+## 🆙 Upgrading from v1.x
 
----
-
-### 🧪 Examples
-
-**Simple notification:**
-```bash
-/setwebhook alert none notify
-```
-
-**Send to Discord:**
-```bash
-/setwebhook discord_alert https://discord.com/api/webhooks/<id>/<token> http POST {"content":"Handshake captured!"}
-```
-
-**Rotate the screen (without restarting full system!):**
-```bash
-/setwebhook rotate_screen none shell sudo sed -i '/ui\.display\.rotation/c\ui.display.rotation = {degrees}' /etc/pwnagotchi/config.toml && sudo killall -USR1 pwnagotchi
-```
-_Trigger it with:_
-```bash
-/webhook rotate_screen degrees=180
-```
-
-**Toggle a plugin (e.g., memtemp):**
-```bash
-/setwebhook toggle_memtemp none plugin_toggle
-```
-_Trigger it with:_
-```bash
-/webhook toggle_memtemp memtemp
-```
-
----
-
-### ➡️ Trigger a Webhook
+Just run the installer - it automatically detects and removes old versions:
 
 ```bash
-/webhook <action> [extra]
+sudo bash install.sh
 ```
 
-| Example | Meaning |
-|:--------|:--------|
-| `/webhook alert` | Send a notification |
-| `/webhook temp 41.2` | Post temp to HTTP API |
-| `/webhook rotate_screen degrees=90` | Rotate screen 90 degrees |
-| `/webhook toggle_memtemp memtemp` | Toggle the memtemp plugin |
+Your existing configuration is preserved!
 
----
+## 📝 Troubleshooting
 
-### 📝 Notes
-
-- For `shell` webhooks, variables like `{degrees}` can be passed as `key=value`.
-- Webhooks are stored at `/etc/pwnagotchi/telepwn_webhooks.toml`.
-- Edit or delete webhooks manually if needed.
-
----
-
----
-> 📚 **Need more help?**  
-> Check out the [TelePwn Webhooks Help Guide](webhooks.md) for easy examples and a cheat sheet!
----
-
-### 📈 System Stats
-
-| Command | Description |
-|:--------|:------------|
-| `/stats` | Show CPU usage, RAM usage, and temperature |
-
----
-
-### 🧠 Schedule Tasks
-
-| Command | Description |
-|:--------|:------------|
-| `/schedule add <action> <interval_hours>` | Add a scheduled task |
-| `/schedule list` | List scheduled tasks |
-| `/schedule remove <task_id>` | Remove a scheduled task |
-
-Example:  
+**Bot not starting?**
 ```bash
-/schedule add reboot 24
+sudo tail -f /etc/pwnagotchi/log/pwnagotchi.log | grep TelePwn
 ```
-_(Reboots every 24 hours)_
+
+**Not receiving handshakes?**
+- Check `send_message = true` in config
+- Verify bot is running in logs
+
+**Community sharing not working?**
+- Set `community_enabled = true`
+- Set `community_chat_id = "@YourChannel"`
+- Make bot admin in channel
+
+## 🔒 Privacy & Security
+
+- Bot token: Keep it secret - anyone with it controls your bot
+- Chat ID: Keep it private - prevents unauthorized access
+- Handshake files: Contain WiFi capture data - handle securely
+- Community sharing: Only share what you're comfortable making public
+
+## 📊 What's New in v2.0
+
+- ✅ Full Python 3.13 compatibility
+- ✅ Auto-send handshake .pcap files to Telegram
+- ✅ Configurable community chat (use your own channel)
+- ✅ All commands include back buttons
+- ✅ Better error handling throughout
+- ✅ Headless mode support
+
+## 🙏 Credits
+
+**Author:** WPA2
+
+**Community:** [UK Pwnagotchi](https://t.me/Pwnagotchi_UK_Chat)
+
+## 📄 License
+
+GPL v3 - Same as Pwnagotchi
 
 ---
 
-## 🧰 Troubleshooting
-
-- Bot not responding?
-  ```bash
-  sudo journalctl -u pwnagotchi | grep telepwn
-  ```
-
-- Commands fail?
-  ```bash
-  sudo tail -n 50 /etc/pwnagotchi/log/pwnagotchi.log
-  ```
-
-- Webhooks not firing?
-  ```bash
-  sudo grep webhook /etc/pwnagotchi/log/pwnagotchi.log
-  ```
-
-- Confirm plugin is enabled:
-  ```text
-  main.plugins.telepwn.enabled = true
-  ```
-  in your `/etc/pwnagotchi/config.toml`
-
----
-
-## 🤝 Contributing
-
-- Fork this repo.
-- Add cool features or fixes.
-- Submit pull requests.
-- Help us make Pwnagotchi smarter!
-
----
+**Made with ❤️ for the Pwnagotchi community**

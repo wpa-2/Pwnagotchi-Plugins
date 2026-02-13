@@ -98,7 +98,7 @@ MAIN_MENU = [
 
 class TelePwn(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = "3.0.0"
+    __version__ = "2.0.0"
     __license__ = "GPL3"
     __description__ = "Telegram interface for Pwnagotchi - Python 3.13 compatible"
     __dependencies__ = ("python-telegram-bot>=20.0", "requests>=2.28.0", "psutil>=5.9.0", "schedule>=1.2.0", "toml>=0.10.0", "pytz")
@@ -715,9 +715,10 @@ class TelePwn(plugins.Plugin):
             
             del self.pending_screenshots[user_id]
             
+            community_name = self.options["community_chat_id"]
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"✅ Shared to @Pwnagotchi_UK_Chat!"
+                text=f"✅ Shared to {community_name}!"
             )
         except Exception as e:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=f"⛔ Failed: {e}")

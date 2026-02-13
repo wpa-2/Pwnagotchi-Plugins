@@ -2,6 +2,7 @@
 
 # TelePwn v2.0 Installation Script
 # Python 3.13 Compatible
+# Automatically cleans up old versions if present
 # Author: WPA2
 
 set -e
@@ -17,7 +18,7 @@ NC='\033[0m'
 # Configuration
 PLUGIN_DIR="/usr/local/share/pwnagotchi/custom-plugins"
 CONFIG_FILE="/etc/pwnagotchi/config.toml"
-PLUGIN_URL="https://gitea.wpa3lab.homes/wpa2/Pwnagotchi-Plugins/raw/branch/Testing/TelePwn/telepwn.py"  # Update this URL
+PLUGIN_URL="https://raw.githubusercontent.com/YOUR_REPO/TelePwn/main/telepwn.py"  # Update this URL
 
 print_banner() {
     echo -e "${CYAN}"
@@ -40,13 +41,45 @@ check_root() {
     fi
 }
 
+cleanup_old_version() {
+    print_step "Checking for old TelePwn installation..."
+    
+    local cleaned=false
+    
+    # Check python-telegram-bot version
+    if pip3 show python-telegram-bot &>/dev/null; then
+        local version=$(pip3 show python-telegram-bot 2>/dev/null | grep "^Version:" | awk '{print $2}')
+        if [[ "$version" =~ ^13\. ]]; then
+            print_info "Found old python-telegram-bot v$version - removing..."
+            pip3 uninstall -y python-telegram-bot &>/dev/null || true
+            cleaned=true
+        elif [[ "$version" =~ ^20\. ]] || [[ "$version" =~ ^21\. ]]; then
+            print_info "python-telegram-bot v$version already installed (compatible)"
+        fi
+    fi
+    
+    # Check for old imghdr shim
+    if [ -f "/usr/local/lib/python3.13/imghdr.py" ]; then
+        print_info "Removing old imghdr compatibility shim..."
+        rm -f /usr/local/lib/python3.13/imghdr.py
+        cleaned=true
+    fi
+    
+    if [ "$cleaned" = true ]; then
+        print_success "Old version cleaned up"
+    else
+        print_info "No old version found (fresh install)"
+    fi
+}
+
 install_dependencies() {
     print_step "Installing dependencies..."
     
+    print_info "Installing python-telegram-bot v20 + pytz..."
     pip3 install python-telegram-bot pytz --upgrade --break-system-packages 2>&1 | grep -v "WARNING" || true
     pip3 install requests psutil schedule toml --break-system-packages 2>&1 | grep -v "WARNING" || true
     
-    print_success "Dependencies installed (python-telegram-bot v20 + pytz)"
+    print_success "Dependencies installed"
 }
 
 install_plugin() {
@@ -64,18 +97,18 @@ install_plugin() {
     if wget -q "$PLUGIN_URL" -O "$PLUGIN_DIR/telepwn.py" 2>/dev/null; then
         print_success "Plugin downloaded from repository"
     # Fallback to local file
-    elif [ -f "telepwn_v20.py" ]; then
-        cp telepwn_v20.py "$PLUGIN_DIR/telepwn.py"
-        print_success "Plugin installed from local file"
     elif [ -f "telepwn.py" ]; then
         cp telepwn.py "$PLUGIN_DIR/telepwn.py"
+        print_success "Plugin installed from local file"
+    elif [ -f "telepwn_v20.py" ]; then
+        cp telepwn_v20.py "$PLUGIN_DIR/telepwn.py"
         print_success "Plugin installed from local file"
     else
         print_error "Could not download plugin and no local file found"
         echo ""
         echo "Options:"
         echo "1. Update PLUGIN_URL in this script to your repository"
-        echo "2. Run from same directory as telepwn.py or telepwn_v20.py"
+        echo "2. Run from same directory as telepwn.py"
         echo ""
         exit 1
     fi
@@ -183,7 +216,7 @@ update_config() {
     print_info "Config backed up"
     
     # Update using Python
-    python3 << EOF
+    python3 << PYTHON_EOF
 import toml
 
 with open('$CONFIG_FILE', 'r') as f:
@@ -201,7 +234,7 @@ telepwn_config = {
     'bot_token': '$BOT_TOKEN',
     'chat_id': '$CHAT_ID',
     'send_message': True,
-    'send_handshake_file': True,  # v2.0: Auto-send .pcap files
+    'send_handshake_file': True,
     'auto_start': True,
     'community_enabled': $COMMUNITY_ENABLED
 }
@@ -214,7 +247,7 @@ config['main']['plugins']['telepwn'] = telepwn_config
 
 with open('$CONFIG_FILE', 'w') as f:
     toml.dump(config, f)
-EOF
+PYTHON_EOF
     
     print_success "Configuration updated"
 }
@@ -276,7 +309,7 @@ show_completion() {
     fi
     
     echo -e "${CYAN}Check Logs:${NC}"
-    echo "sudo tail -f /var/log/pwnagotchi.log | grep TelePwn"
+    echo "sudo tail -f /etc/pwnagotchi/log/pwnagotchi.log | grep TelePwn"
     echo ""
     echo -e "${GREEN}Happy Pwning!${NC}"
     echo ""
@@ -287,6 +320,7 @@ main() {
     print_banner
     
     check_root
+    cleanup_old_version  # Automatic - only cleans if needed
     install_dependencies
     install_plugin
     
