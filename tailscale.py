@@ -25,6 +25,7 @@ class Tailscale(plugins.Plugin):
         self.options.setdefault('sync_interval_secs', 600)
         self.options.setdefault('source_handshake_path', '/home/pi/handshakes/')
         self.options.setdefault('hostname', 'pwnagotchi')
+        self.options.setdefault('ui_position', (175, 76))  # Default position for 250x122 displays
 
         # Validate that all required options are present
         required = ['auth_key', 'server_tailscale_ip', 'server_user', 'handshake_dir']
@@ -42,11 +43,16 @@ class Tailscale(plugins.Plugin):
 
     def on_ui_setup(self, ui):
         self.ui = ui
+        # Convert position tuple from config if it's a list
+        position = self.options['ui_position']
+        if isinstance(position, list):
+            position = tuple(position)
+            
         self.ui.add_element('ts_status', LabeledValue(
             color=BLACK,
             label='TS:',
             value=self.status,
-            position=(175, 76),
+            position=position,
             label_font=fonts.Small,
             text_font=fonts.Small
         ))
@@ -55,16 +61,26 @@ class Tailscale(plugins.Plugin):
         """Helper method to update the UI status."""
         original_status = self.status
         self.status = new_status
-        self.ui.set('ts_status', self.status)
-        self.ui.update()
+        
+        # Only update UI if it's been initialized
+        if hasattr(self, 'ui') and self.ui:
+            try:
+                self.ui.set('ts_status', self.status)
+                self.ui.update()
+            except Exception as e:
+                logging.debug(f"[Tailscale] UI update failed: {e}")
         
         if temporary:
             time.sleep(duration)
             # Only revert if the status hasn't changed to something else in the meantime
             if self.status == new_status:
                 self.status = original_status
-                self.ui.set('ts_status', self.status)
-                self.ui.update()
+                if hasattr(self, 'ui') and self.ui:
+                    try:
+                        self.ui.set('ts_status', self.status)
+                        self.ui.update()
+                    except Exception as e:
+                        logging.debug(f"[Tailscale] UI update failed: {e}")
 
     def _connect(self):
         max_retries = 3
@@ -72,7 +88,7 @@ class Tailscale(plugins.Plugin):
         
         for attempt in range(max_retries):
             logging.info(f"[Tailscale] Attempting to connect (Attempt {attempt + 1}/{max_retries})...")
-            self._update_status("Connecting")
+            self._update_status("Conn...")
 
             try:
                 # Check current Tailscale status
@@ -114,7 +130,7 @@ class Tailscale(plugins.Plugin):
 
     def _sync_handshakes(self):
         logging.info("[Tailscale] Starting handshake sync...")
-        self._update_status("Syncing...")
+        self._update_status("Sync...")
         
         source_dir = self.options['source_handshake_path']
         remote_dir = self.options['handshake_dir']
@@ -136,20 +152,24 @@ class Tailscale(plugins.Plugin):
                     break
             
             logging.info(f"[Tailscale] Sync complete. Transferred {new_files} new files.")
-            self._update_status(f"Synced: {new_files}", temporary=True)
+            # Keep status concise for small displays
+            if new_files > 99:
+                self._update_status("Sync:99+", temporary=True)
+            else:
+                self._update_status(f"Sync:{new_files}", temporary=True)
             self.last_sync_time = time.time()
 
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logging.error(f"[Tailscale] Handshake sync failed: {e}")
             if hasattr(e, 'stderr') and e.stderr:
                 logging.error(f"[Tailscale] Stderr: {e.stderr.strip()}")
-            self._update_status("Sync Failed", temporary=True)
+            self._update_status("SyncErr", temporary=True)
 
     def on_internet_available(self, agent):
         if not self.ready:
             return
         
-        if self.status not in ["Up", "Connecting"]:
+        if self.status not in ["Up", "Conn..."]:
             self._connect()
         
         if self.status == "Up":
