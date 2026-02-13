@@ -10,7 +10,7 @@ from pwnagotchi.ui.view import BLACK
 
 class Tailscale(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.0.0'
+    __version__ = '1.0.1'
     __license__ = 'GPL3'
     __description__ = 'A configurable plugin to connect to a Tailscale network and sync handshakes.'
 
@@ -77,7 +77,8 @@ class Tailscale(plugins.Plugin):
             try:
                 # Check current Tailscale status
                 status_result = subprocess.run(["tailscale", "status"], capture_output=True, text=True)
-                if "Logged in as" in status_result.stdout:
+                # A successful status command (exit code 0) with output means we're connected
+                if status_result.returncode == 0 and status_result.stdout.strip():
                     self._update_status("Up")
                     logging.info("[Tailscale] Already connected to Tailscale.")
                     return True
@@ -92,8 +93,9 @@ class Tailscale(plugins.Plugin):
                 
                 # Verify connection
                 time.sleep(5) # Give Tailscale a moment to establish the connection
-                status_check = subprocess.run(["tailscale", "status"], check=True, capture_output=True, text=True)
-                if "Logged in as" in status_check.stdout:
+                status_check = subprocess.run(["tailscale", "status"], capture_output=True, text=True)
+                # Check if status command succeeded and has output (indicating we're connected)
+                if status_check.returncode == 0 and status_check.stdout.strip():
                     self._update_status("Up")
                     logging.info("[Tailscale] Connection established.")
                     return True
@@ -101,7 +103,8 @@ class Tailscale(plugins.Plugin):
                     raise subprocess.CalledProcessError(1, "tailscale up", stderr="Failed to verify connection.")
 
             except subprocess.CalledProcessError as e:
-                logging.error(f"[Tailscale] Connection failed: {e.stderr.strip()}")
+                error_msg = e.stderr.strip() if e.stderr else 'Unknown error'
+                logging.error(f"[Tailscale] Connection failed: {error_msg}")
                 self._update_status("Error")
                 time.sleep(retry_delay)
 
@@ -138,7 +141,7 @@ class Tailscale(plugins.Plugin):
 
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             logging.error(f"[Tailscale] Handshake sync failed: {e}")
-            if hasattr(e, 'stderr'):
+            if hasattr(e, 'stderr') and e.stderr:
                 logging.error(f"[Tailscale] Stderr: {e.stderr.strip()}")
             self._update_status("Sync Failed", temporary=True)
 
