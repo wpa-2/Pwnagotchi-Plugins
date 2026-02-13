@@ -3,20 +3,50 @@ import os
 import logging
 import subprocess
 import threading
+import asyncio
 from time import sleep, time
-import telegram
+
+# CRITICAL: Monkey-patch APScheduler BEFORE importing telegram.ext
+# Python 3.13 changed timezone handling, but APScheduler still requires pytz
+try:
+    import pytz
+    
+    # Patch apscheduler.util functions
+    import apscheduler.util
+    
+    def patched_astimezone(obj):
+        """Always return pytz.UTC for Python 3.13 compatibility"""
+        return pytz.UTC
+    
+    def patched_get_localzone():
+        """Always return pytz.UTC for Python 3.13 compatibility"""
+        return pytz.UTC
+    
+    # Apply patches
+    apscheduler.util.astimezone = patched_astimezone
+    apscheduler.util.get_localzone = patched_get_localzone
+    
+    print("[TelePwn] APScheduler patched for Python 3.13")
+except Exception as e:
+    print(f"[TelePwn] FAILED to patch APScheduler: {e}")
+    import traceback
+    traceback.print_exc()
+
+# NOW import telegram (which will use the patched APScheduler)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import pwnagotchi
-import pwnagotchi.fs as fs
-import pwnagotchi.ui.view as view
 import pwnagotchi.plugins as plugins
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import CommandHandler, CallbackQueryHandler, Updater, MessageHandler, Filters
+import pwnagotchi.ui.view as view
 import toml
 import requests
-import psutil  # For system stats
-import schedule  # For scheduled tasks
+import psutil
+import schedule
 from datetime import datetime
-import re
+
+# Suppress verbose HTTP logging from telegram library
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Constants
 CONFIG_FILE = "/etc/pwnagotchi/config.toml"
@@ -25,20 +55,19 @@ MAX_MESSAGE_LENGTH = 4096 // 2
 LOG_PATH = "/etc/pwnagotchi/log/pwnagotchi.log"
 COOLDOWN_SECONDS = 2
 PLUGIN_DIRS = [
-    "/home/pi/.pwn/lib/python3.11/site-packages/pwnagotchi/plugins/default/",
-    "/usr/local/share/pwnagotchi/custom-plugins/"
+    "/usr/local/share/pwnagotchi/custom-plugins/",
+    "/home/pi/.pwn/lib/python3.13/site-packages/pwnagotchi/plugins/default/"
 ]
 
-# Change storage files to TOML for consistency
+SHARE_COOLDOWN = 300
+MAX_SHARES_PER_DAY = 10
+MILESTONE_LEVELS = [100, 500, 1000, 5000, 10000]
+
 WEBHOOK_FILE = "/etc/pwnagotchi/telepwn_webhooks.toml"
 SCHEDULE_FILE = "/etc/pwnagotchi/telepwn_schedules.toml"
 
-# Initial menu with just a "Menu" button
-INITIAL_MENU = [
-    [InlineKeyboardButton("📋 Menu", callback_data="show_menu")]
-]
+INITIAL_MENU = [[InlineKeyboardButton("📋 Menu", callback_data="show_menu")]]
 
-# Main menu layout (compact grid style, with Back button)
 MAIN_MENU = [
     [
         InlineKeyboardButton("🔄 Reboot", callback_data="reboot"),
@@ -69,11 +98,10 @@ MAIN_MENU = [
 
 class TelePwn(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = "0.1.0_Beta"
+    __version__ = "3.0.0"
     __license__ = "GPL3"
-    __description__ = "A streamlined Telegram interface for Pwnagotchi"
-    __dependencies__ = ("python-telegram-bot==13.15",
-                        "requests>=2.28.0", "psutil>=5.9.0", "schedule>=1.2.0")
+    __description__ = "Telegram interface for Pwnagotchi - Python 3.13 compatible"
+    __dependencies__ = ("python-telegram-bot>=20.0", "requests>=2.28.0", "psutil>=5.9.0", "schedule>=1.2.0", "toml>=0.10.0", "pytz")
 
     _instance = None
     _lock = threading.Lock()
@@ -84,26 +112,33 @@ class TelePwn(plugins.Plugin):
             "bot_token": "",
             "chat_id": "",
             "auto_start": True,
-            "send_message": True
+            "send_message": True,
+            "send_handshake_file": True,  # Always send files - they're tiny anyway!
+            "community_enabled": False,
+            "community_chat_id": ""  # Optional: Telegram channel/group for sharing
         }
         self.screen_rotation = 0
-        self.updater = None
+        self.application = None
+        self.agent = None
         self.plugin_states = {}
         self.webhooks = self._load_webhooks()
         self.schedules = self._load_schedules()
-        self.last_plugin_list = []
-        self.schedule_thread = None
         self.running = False
-        self.user_states = {}  # Track user states (e.g., waiting for upload)
+        self.user_last_share = {}
+        self.user_share_count = {}
+        self.pending_screenshots = {}
+        self.last_handshake_count = 0
+        self.last_plugin_list = []
+        self.user_states = {}
+        self.schedule_thread = None
+        self.bot_loop = None  # Store the bot's event loop
+        self.bot_initializing = False  # Prevent multiple simultaneous starts
 
     def _load_webhooks(self):
         try:
             if os.path.exists(WEBHOOK_FILE) and os.path.getsize(WEBHOOK_FILE) > 0:
-                with open(WEBHOOK_FILE, "r", encoding="utf-8") as f:
-                    loaded = toml.load(f)
-                    self.logger.info(f"[TelePwn] Loaded webhooks: {loaded}")
-                    return loaded
-            self.logger.info("[TelePwn] Webhook file empty or missing, starting fresh")
+                with open(WEBHOOK_FILE, "r") as f:
+                    return toml.load(f)
             return {}
         except Exception as e:
             self.logger.error(f"[TelePwn] Failed to load webhooks: {e}")
@@ -111,21 +146,16 @@ class TelePwn(plugins.Plugin):
 
     def _save_webhooks(self):
         try:
-            with open(WEBHOOK_FILE, "w", encoding="utf-8") as f:
+            with open(WEBHOOK_FILE, "w") as f:
                 toml.dump(self.webhooks, f)
-            self.logger.info(f"[TelePwn] Webhooks saved to {WEBHOOK_FILE}: {self.webhooks}")
         except Exception as e:
             self.logger.error(f"[TelePwn] Failed to save webhooks: {e}")
-            raise
 
     def _load_schedules(self):
         try:
             if os.path.exists(SCHEDULE_FILE) and os.path.getsize(SCHEDULE_FILE) > 0:
-                with open(SCHEDULE_FILE, "r", encoding="utf-8") as f:
-                    loaded = toml.load(f)
-                    self.logger.info(f"[TelePwn] Loaded schedules: {loaded}")
-                    return loaded
-            self.logger.info("[TelePwn] Schedule file empty or missing, starting fresh")
+                with open(SCHEDULE_FILE, "r") as f:
+                    return toml.load(f)
             return {}
         except Exception as e:
             self.logger.error(f"[TelePwn] Failed to load schedules: {e}")
@@ -133,24 +163,24 @@ class TelePwn(plugins.Plugin):
 
     def _save_schedules(self):
         try:
-            with open(SCHEDULE_FILE, "w", encoding="utf-8") as f:
+            with open(SCHEDULE_FILE, "w") as f:
                 toml.dump(self.schedules, f)
-            self.logger.info(f"[TelePwn] Schedules saved to {SCHEDULE_FILE}: {self.schedules}")
         except Exception as e:
             self.logger.error(f"[TelePwn] Failed to save schedules: {e}")
-            raise
 
     def on_loaded(self):
         self.logger.info("[TelePwn] Plugin loaded.")
-        # Load options from config.toml
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(CONFIG_FILE, "r") as f:
                 config = toml.load(f)
                 plugins_config = config.get("main", {}).get("plugins", {}).get("telepwn", {})
                 self.options["bot_token"] = plugins_config.get("bot_token", "")
                 self.options["chat_id"] = plugins_config.get("chat_id", "")
                 self.options["send_message"] = plugins_config.get("send_message", True)
+                self.options["send_handshake_file"] = plugins_config.get("send_handshake_file", True)  # Default: enabled
                 self.options["auto_start"] = plugins_config.get("auto_start", True)
+                self.options["community_enabled"] = plugins_config.get("community_enabled", False)
+                self.options["community_chat_id"] = plugins_config.get("community_chat_id", "")
         except Exception as e:
             self.logger.error(f"[TelePwn] Failed to load config: {e}")
             return
@@ -163,8 +193,14 @@ class TelePwn(plugins.Plugin):
             if TelePwn._instance:
                 TelePwn._instance.stop_bot()
             TelePwn._instance = self
+
         self.load_config()
         self.start_scheduler()
+        
+        if self.options.get("community_enabled"):
+            self.logger.info("[TelePwn] Community features ENABLED")
+        else:
+            self.logger.info("[TelePwn] Community features DISABLED")
 
     def on_unload(self, ui=None):
         self.logger.info("[TelePwn] Plugin unloading...")
@@ -173,11 +209,10 @@ class TelePwn(plugins.Plugin):
                 self.stop_bot()
                 self.stop_scheduler()
                 TelePwn._instance = None
-        self.logger.info("[TelePwn] Plugin fully unloaded.")
 
     def load_config(self):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(CONFIG_FILE, "r") as f:
                 config = toml.load(f)
                 self.screen_rotation = int(config.get("ui", {}).get("display", {}).get("rotation", 0))
                 plugins_config = config.get("main", {}).get("plugins", {})
@@ -187,225 +222,309 @@ class TelePwn(plugins.Plugin):
             self.logger.warning(f"Failed to load config: {e}")
 
     def on_agent(self, agent):
+        self.agent = agent
         if self.options.get("auto_start", False):
             self.on_internet_available(agent)
 
     def on_handshake(self, agent, filename, access_point, client_station):
-        display = agent.view()
         try:
-            bot = telegram.Bot(self.options["bot_token"])
-            message = f"\ud83e\udd1d New handshake: {access_point['hostname']} - {client_station['mac']}"
-            if self.options.get("send_message", False):
-                bot.send_message(
-                    chat_id=int(self.options["chat_id"]),
-                    text=message,
-                    disable_web_page_preview=True,
+            if self.application and self.bot_loop and self.options.get("send_message", False):
+                ap_name = access_point.get('hostname', 'Unknown')
+                client_mac = client_station.get('mac', 'Unknown')
+                message = f"🤝 New handshake: {ap_name} - {client_mac}"
+                
+                # Send notification message
+                asyncio.run_coroutine_threadsafe(
+                    self.application.bot.send_message(
+                        chat_id=int(self.options["chat_id"]),
+                        text=message
+                    ),
+                    self.bot_loop
                 )
-                self.logger.info(f"Sent handshake notification: {message}")
-            display.set("status", "Handshake sent to Telegram!")
-            display.update(force=True)
+                
+                # Send the .pcap file if enabled
+                if self.options.get("send_handshake_file", False) and filename:
+                    handshake_path = os.path.join(HANDSHAKE_DIR, filename)
+                    if os.path.exists(handshake_path):
+                        asyncio.run_coroutine_threadsafe(
+                            self._send_handshake_file(handshake_path, ap_name, client_mac),
+                            self.bot_loop
+                        )
+                
+            if self.options.get("community_enabled"):
+                self.check_milestone(agent)
         except Exception as e:
             self.logger.error(f"Error sending handshake: {e}")
 
+    async def _send_handshake_file(self, filepath, ap_name, client_mac):
+        """Send the handshake .pcap file to Telegram"""
+        try:
+            with open(filepath, 'rb') as pcap_file:
+                caption = f"🤝 {ap_name} - {client_mac}"
+                await self.application.bot.send_document(
+                    chat_id=int(self.options["chat_id"]),
+                    document=pcap_file,
+                    caption=caption
+                )
+            self.logger.info(f"[TelePwn] Sent handshake file: {filepath}")
+        except Exception as e:
+            self.logger.error(f"[TelePwn] Failed to send handshake file: {e}")
+
+    def check_milestone(self, agent):
+        try:
+            current_count = len([f for f in os.listdir(HANDSHAKE_DIR) if os.path.isfile(os.path.join(HANDSHAKE_DIR, f))])
+            
+            if current_count in MILESTONE_LEVELS and current_count != self.last_handshake_count:
+                self.last_handshake_count = current_count
+                
+                message = f"🎉 MILESTONE UNLOCKED! 🎉\n\nYou just captured your {current_count}th handshake!\n\nShare this achievement with the community?"
+                keyboard = [
+                    [InlineKeyboardButton("📤 Share Milestone!", callback_data="share_milestone")],
+                    [InlineKeyboardButton("🙈 Keep Private", callback_data="cancel")]
+                ]
+                
+                if self.bot_loop:
+                    asyncio.run_coroutine_threadsafe(
+                        self.application.bot.send_message(
+                            chat_id=int(self.options["chat_id"]),
+                            text=message,
+                            reply_markup=InlineKeyboardMarkup(keyboard)
+                        ),
+                        self.bot_loop
+                    )
+                
+                self.logger.info(f"[TelePwn] Milestone {current_count} detected!")
+        except Exception as e:
+            self.logger.error(f"[TelePwn] Milestone check failed: {e}")
+
     def on_internet_available(self, agent):
-        if self.updater and self.updater.running:
-            self.logger.debug("[TelePwn] Already connected, skipping initialization.")
+        if self.bot_initializing:
+            self.logger.debug("[TelePwn] Already initializing...")
+            return
+        if self.application and self.application.running:
+            self.logger.debug("[TelePwn] Already connected.")
             return
         self.logger.info("[TelePwn] Starting Telegram bot...")
+        self.agent = agent
+        self.bot_initializing = True
         try:
-            self.start_bot(agent)
+            self.start_bot()
         except Exception as e:
             self.logger.error(f"[TelePwn] Error connecting to Telegram: {e}")
-            if self.updater:
-                self.updater.stop()
-                self.updater = None
+            self.bot_initializing = False
 
-    def start_bot(self, agent):
-        self.updater = Updater(self.options["bot_token"], use_context=True)
-        self.register_handlers(agent, self.updater.dispatcher)
-        self.updater.start_polling()
-        self.logger.info("[TelePwn] Telegram polling started.")
+    def start_bot(self):
+        # Start bot in background thread
+        def run_bot():
+            try:
+                # Create event loop FIRST
+                self.bot_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self.bot_loop)
+                
+                self.logger.info("[TelePwn] Event loop created, building application...")
+                
+                # NOW build application (in thread with event loop)
+                self.application = (
+                    Application.builder()
+                    .token(self.options["bot_token"])
+                    .build()
+                )
+                
+                self.logger.info("[TelePwn] Application built, registering handlers...")
+                
+                # Register handlers
+                self.application.add_handler(CommandHandler("start", self.start))
+                self.application.add_handler(CommandHandler("menu", self.start))  # /menu = /start
+                self.application.add_handler(CommandHandler("help", self.help_command))
+                self.application.add_handler(CommandHandler("reboot", self.reboot))
+                self.application.add_handler(CommandHandler("shutdown", self.shutdown))
+                self.application.add_handler(CommandHandler("uptime", self.uptime))
+                self.application.add_handler(CommandHandler("handshakes", self.handshake_count))
+                self.application.add_handler(CommandHandler("screenshot", self.take_screenshot))
+                self.application.add_handler(CommandHandler("backup", self.create_backup))
+                self.application.add_handler(CommandHandler("restart_manual", self.restart_manual))
+                self.application.add_handler(CommandHandler("restart_auto", self.restart_auto))
+                self.application.add_handler(CommandHandler("kill", self.pwnkill))
+                self.application.add_handler(CommandHandler("clear", self.clear))
+                self.application.add_handler(CommandHandler("logs", self.logs))
+                self.application.add_handler(CommandHandler("inbox", self.inbox))
+                self.application.add_handler(CommandHandler("plugins", self.plugins_menu))
+                self.application.add_handler(CommandHandler("stats", self.system_stats))
+                self.application.add_handler(CallbackQueryHandler(self.button_handler))
+                self.application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document_upload))
+                
+                # Add error handler to suppress network errors during retries
+                async def error_handler(update, context):
+                    """Log errors but don't crash"""
+                    if "httpx.ConnectError" in str(context.error):
+                        # Network errors are normal during startup/retries
+                        pass
+                    else:
+                        self.logger.error(f"Update {update} caused error: {context.error}")
+                
+                self.application.add_error_handler(error_handler)
+                
+                # Schedule startup message
+                self.bot_loop.create_task(self._send_startup_message())
+                
+                # Mark as initialized
+                self.bot_initializing = False
+                self.logger.info("[TelePwn] Bot initialization complete, starting polling...")
+                
+                # Run bot (disable signal handlers - we're in a background thread!)
+                self.application.run_polling(
+                    drop_pending_updates=True,
+                    stop_signals=None  # CRITICAL: No signal handlers in daemon thread
+                )
+                self.logger.info("[TelePwn] Bot polling started successfully!")
+                
+            except Exception as e:
+                self.logger.error(f"[TelePwn] FATAL ERROR in bot thread: {e}")
+                import traceback
+                self.logger.error(f"[TelePwn] Traceback: {traceback.format_exc()}")
+                self.bot_initializing = False
+        
+        bot_thread = threading.Thread(target=run_bot, daemon=True)
+        bot_thread.start()
+        
+        # Wait a moment for application to be built
+        sleep(0.5)
 
-        bot = telegram.Bot(self.options["bot_token"])
-        bot.set_my_commands(
-            commands=[
+    async def _send_startup_message(self):
+        await asyncio.sleep(3)  # Wait for bot to fully initialize
+        try:
+            self.logger.info("[TelePwn] Setting bot commands...")
+            await self.application.bot.set_my_commands([
                 BotCommand("start", "Open the main menu"),
+                BotCommand("menu", "Show the main menu"),
+                BotCommand("help", "Show help and commands"),
                 BotCommand("reboot", "Reboot the device"),
-                BotCommand("shutdown", "Shutdown with clear"),
+                BotCommand("shutdown", "Shutdown device"),
                 BotCommand("uptime", "Check uptime"),
-                BotCommand("handshakes", "Count captured handshakes"),
+                BotCommand("handshakes", "Count handshakes"),
                 BotCommand("screenshot", "Take a screenshot"),
-                BotCommand("backup", "Create and send a backup"),
-                BotCommand("restart_manual", "Restart daemon in manual mode"),
-                BotCommand("restart_auto", "Restart daemon in auto mode"),
-                BotCommand("kill", "Kill the daemon"),
-                BotCommand("clear", "Clear the screen"),
-                BotCommand("logs", "View recent logs"),
-                BotCommand("inbox", "Check Pwngrid inbox"),
-                BotCommand("plugins", "List plugins"),
-                BotCommand("toggle", "Toggle a plugin"),
-                BotCommand("setwebhook", "Set a webhook command"),
-                BotCommand("webhook", "Trigger a custom webhook action"),
-                BotCommand("config", "Edit config.toml (view/set/list)"),
-                BotCommand("stats", "Show system stats"),
-                BotCommand("pwngrid", "Pwngrid actions (send/clear)"),
-                BotCommand("files", "Manage files (list/download/upload)"),
-                BotCommand("schedule", "Manage scheduled tasks (add/remove/list)"),
-                BotCommand("shell", "Run shell commands (with confirmation)"),
-            ],
-            scope=telegram.BotCommandScopeAllPrivateChats(),
-        )
-
-        bot.send_message(
-            chat_id=int(self.options["chat_id"]),
-            text=f"🖐 TelePwn v{self.__version__} is online!",
-            reply_markup=InlineKeyboardMarkup(INITIAL_MENU),
-            parse_mode="HTML",
-        )
+                BotCommand("backup", "Create backup"),
+                BotCommand("restart_manual", "Restart in manual mode"),
+                BotCommand("restart_auto", "Restart in auto mode"),
+                BotCommand("kill", "Kill daemon"),
+                BotCommand("clear", "Clear screen"),
+                BotCommand("logs", "View logs"),
+                BotCommand("inbox", "Check inbox"),
+                BotCommand("plugins", "Manage plugins"),
+                BotCommand("stats", "System stats"),
+            ])
+            self.logger.info("[TelePwn] Bot commands set successfully!")
+            
+            status_msg = f"🖐 TelePwn v{self.__version__} is online!"
+            if self.options.get("community_enabled"):
+                status_msg += "\n\n🌟 Community features enabled!"
+            
+            self.logger.info("[TelePwn] Sending startup message...")
+            await self.application.bot.send_message(
+                chat_id=int(self.options["chat_id"]),
+                text=status_msg,
+                reply_markup=InlineKeyboardMarkup(INITIAL_MENU)
+            )
+            self.logger.info("[TelePwn] Startup message sent successfully!")
+        except Exception as e:
+            self.logger.error(f"[TelePwn] Failed to send startup message: {e}")
 
     def stop_bot(self):
-        if self.updater:
-            if self.updater.running:
-                self.updater.stop()
-                self.logger.info("[TelePwn] Telegram polling stopped.")
-            self.updater = None
+        if self.application and self.application.running:
+            try:
+                if self.bot_loop:
+                    asyncio.run_coroutine_threadsafe(self.application.stop(), self.bot_loop)
+                self.logger.info("[TelePwn] Bot stopped.")
+            except Exception as e:
+                self.logger.error(f"[TelePwn] Error stopping bot: {e}")
 
     def start_scheduler(self):
         self.running = True
-        self.schedule_thread = threading.Thread(target=self.run_scheduler)
-        self.schedule_thread.daemon = True
+        self.schedule_thread = threading.Thread(target=self.run_scheduler, daemon=True)
         self.schedule_thread.start()
-        self.logger.info("[TelePwn] Scheduler started.")
 
     def stop_scheduler(self):
         self.running = False
-        if self.schedule_thread:
-            self.schedule_thread.join()
         schedule.clear()
-        self.logger.info("[TelePwn] Scheduler stopped.")
 
     def run_scheduler(self):
         for task_id, task in self.schedules.items():
             action = task["action"]
             interval = task["interval"]
             if action == "reboot":
-                schedule.every(interval).hours.do(lambda: self._scheduled_reboot())
+                schedule.every(interval).hours.do(lambda: subprocess.run(["sudo", "reboot"]))
             elif action == "backup":
-                schedule.every(interval).hours.do(lambda: self._scheduled_backup())
+                schedule.every(interval).hours.do(self._scheduled_backup)
         while self.running:
             schedule.run_pending()
             sleep(60)
 
-    def _scheduled_reboot(self):
-        try:
-            bot = telegram.Bot(self.options["bot_token"])
-            bot.send_message(
-                chat_id=int(self.options["chat_id"]),
-                text="\ud83d\udd04 Scheduled reboot triggered...",
-                parse_mode="HTML",
-            )
-            subprocess.run(["sudo", "reboot"], check=True)
-        except Exception as e:
-            self.logger.error(f"[TelePwn] Scheduled reboot failed: {e}")
-
     def _scheduled_backup(self):
         try:
-            bot = telegram.Bot(self.options["bot_token"])
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = f"/home/pi/telepwn_scheduled_backup_{timestamp}.tar.gz"
-            backup_files = [
-                "/root/settings.yaml",
-                "/root/client_secrets.json",
-                "/home/pi/handshakes/",
-                "/root/.api-report.json",
-                "/root/.ssh",
-                "/root/.bashrc",
-                "/root/.profile",
-                "/root/peers",
-                "/etc/pwnagotchi/",
-                "/usr/local/share/pwnagotchi/custom-plugins",
-                "/etc/ssh/",
-                "/home/pi/.bashrc",
-                "/home/pi/.profile",
-                "/root/.auto-update",
-                "/home/pi/.wpa_sec_Uploads",
-            ]
-            existing_files = [f for f in backup_files if os.path.exists(f)]
-            if not existing_files:
-                bot.send_message(
-                    chat_id=int(self.options["chat_id"]),
-                    text="\u26a0 No files found for scheduled backup.",
-                    parse_mode="HTML",
+            backup_path = f"/home/pi/telepwn_backup_{timestamp}.tar.gz"
+            subprocess.run(["sudo", "tar", "czf", backup_path, "/etc/pwnagotchi/", "/home/pi/handshakes/"], check=True)
+            if self.bot_loop:
+                asyncio.run_coroutine_threadsafe(
+                    self.application.bot.send_document(
+                        chat_id=int(self.options["chat_id"]),
+                        document=open(backup_path, 'rb')
+                    ),
+                    self.bot_loop
                 )
-                return
-            subprocess.run(["sudo", "tar", "czf", backup_path] + existing_files, check=True)
-            size_mb = round(os.path.getsize(backup_path) / (1024 * 1024), 2)
-            with open(backup_path, "rb") as backup:
-                bot.send_document(chat_id=int(self.options["chat_id"]), document=backup)
-            bot.send_message(
-                chat_id=int(self.options["chat_id"]),
-                text=f"\u2705 Scheduled backup created and sent ({size_mb} MB)",
-                parse_mode="HTML",
-            )
         except Exception as e:
-            self.logger.error(f"[TelePwn] Scheduled backup failed: {e}")
-            bot = telegram.Bot(self.options["bot_token"])
-            bot.send_message(
-                chat_id=int(self.options["chat_id"]),
-                text=f"\u26d4 Scheduled backup failed: {e}",
-                parse_mode="HTML",
-            )
+            self.logger.error(f"Scheduled backup failed: {e}")
 
-    def register_handlers(self, agent, dispatcher):
-        dispatcher.add_handler(CommandHandler("start", lambda update, context: self.start(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("reboot", lambda update, context: self.reboot(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("shutdown", lambda update, context: self.shutdown(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("uptime", lambda update, context: self.uptime(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("handshakes", lambda update, context: self.handshake_count(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("screenshot", lambda update, context: self.take_screenshot(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("backup", lambda update, context: self.create_backup(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("restart_manual", lambda update, context: self.restart_manual(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("restart_auto", lambda update, context: self.restart_auto(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("kill", lambda update, context: self.pwnkill(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("clear", lambda update, context: self.clear(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("logs", lambda update, context: self.logs(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("inbox", lambda update, context: self.inbox(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("plugins", lambda update, context: self.plugins_menu(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("toggle", lambda update, context: self.toggle_plugin_command(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("setwebhook", lambda update, context: self.set_webhook(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("webhook", lambda update, context: self.webhook(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("config", lambda update, context: self.config_editor(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("stats", lambda update, context: self.system_stats(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("pwngrid", lambda update, context: self.pwngrid_actions(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("files", lambda update, context: self.file_manager(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("schedule", lambda update, context: self.schedule_manager(agent, update, context)))
-        dispatcher.add_handler(CommandHandler("shell", lambda update, context: self.shell_command(agent, update, context)))
-        dispatcher.add_handler(CallbackQueryHandler(lambda update, context: self.button_handler(agent, update, context)))
-        # Add handler for document uploads
-        dispatcher.add_handler(MessageHandler(Filters.document, lambda update, context: self.handle_document_upload(agent, update, context)))
+    async def send_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, keyboard=None):
+        try:
+            if len(text) > MAX_MESSAGE_LENGTH:
+                for chunk in [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)]:
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk)
+            else:
+                if update.callback_query:
+                    await update.callback_query.edit_message_text(
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
+                else:
+                    await update.effective_message.reply_text(
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                    )
+        except Exception as e:
+            self.logger.error(f"Error sending message: {e}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=str(e))
 
-    def start(self, agent, update, context):
-        if update.callback_query and update.callback_query.data == "cancel":
-            self.send_message(update, context, "\u2705 Action cancelled.")
-        self.send_message(update, context, "\ud83d\udd90 f"🖐 TelePwn v{self.__version__}\nSelect an option:", MAIN_MENU)
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.send_message(update, context, f"🖐 TelePwn v{self.__version__}\nSelect an option:", MAIN_MENU)
 
-    def button_handler(self, agent, update, context):
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        help_text = f"""🖐 TelePwn v{self.__version__} Help
+
+**Quick Commands:**
+/start or /menu - Show main menu
+/help - Show this help
+/uptime - System uptime
+/handshakes - Handshake count  
+/screenshot - Take screenshot
+/backup - Create backup
+/stats - System statistics
+
+**Tip:** Use the menu buttons for easier navigation!"""
+        
+        keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+        await self.send_message(update, context, help_text, keyboard)
+
+    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_chat.id != int(self.options.get("chat_id")):
             return
+        
         query = update.callback_query
-        query.answer()
-
-        current_time = time()
-        last_action = context.user_data.get("last_action", 0)
-        if current_time - last_action < COOLDOWN_SECONDS:
-            self.send_message(update, context, "\u26a0 Slow down! Wait a moment.")
-            return
-        context.user_data["last_action"] = current_time
+        await query.answer()
 
         actions = {
             "reboot": self.reboot,
-            "reboot_manual": lambda a, u, c: self.reboot_mode("manual", u, c),
-            "reboot_auto": lambda a, u, c: self.reboot_mode("auto", u, c),
+            "confirm_reboot": self.confirm_reboot,
             "shutdown": self.shutdown,
             "confirm_shutdown": self.confirm_shutdown,
             "uptime": self.uptime,
@@ -421,215 +540,333 @@ class TelePwn(plugins.Plugin):
             "plugins": self.plugins_menu,
             "cancel": self.start,
             "show_menu": self.start,
-            "back_to_initial": lambda a, u, c: self.send_message(u, c, "\ud83d\udd90 f"🖐 TelePwn v{self.__version__}", INITIAL_MENU),
+            "back_to_initial": lambda u, c: self.send_message(u, c, f"🖐 TelePwn v{self.__version__}", INITIAL_MENU),
+            "offer_community_share": self.offer_community_share,
+            "confirm_community_share": self.confirm_community_share,
+            "cancel_share": self.cancel_share,
+            "share_milestone": self.share_milestone_screenshot,
         }
 
         if query.data.startswith("toggle_plugin_"):
             plugin_name = query.data[len("toggle_plugin_"):]
-            self.toggle_plugin(agent, update, context, plugin_name)
-        elif query.data.startswith("confirm_shell_"):
-            command = query.data[len("confirm_shell_"):]
-            self.execute_shell_command(agent, update, context, command)
+            await self.toggle_plugin(update, context, plugin_name)
         elif query.data in actions:
-            actions[query.data](agent, update, context)
+            await actions[query.data](update, context)
 
-    def send_message(self, update, context, text, keyboard=None):
-        if update.effective_chat.id != int(self.options.get("chat_id")):
-            return
-        try:
-            if len(text) > MAX_MESSAGE_LENGTH:
-                for chunk in [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)]:
-                    context.bot.send_message(chat_id=update.effective_chat.id, text=chunk, parse_mode="HTML")
-            else:
-                if update.callback_query:
-                    update.callback_query.edit_message_text(
-                        text=text,
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-                        parse_mode="HTML",
-                    )
-                else:
-                    update.effective_message.reply_text(
-                        text=text,
-                        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-                        parse_mode="HTML",
-                    )
-        except Exception as e:
-            self.logger.error(f"Error sending message: {e}")
-            context.bot.send_message(chat_id=update.effective_chat.id, text=str(e))
-
-    def reboot(self, agent, update, context):
+    async def reboot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
-            [InlineKeyboardButton("✅ Confirm Manual", callback_data="reboot_manual")],
-            [InlineKeyboardButton("✅ Confirm Auto", callback_data="reboot_auto")],
+            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_reboot")],
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
         ]
-        self.send_message(update, context, "\u26a0\ufe0f Confirm reboot? SSH/Bluetooth will disconnect.", keyboard)
+        await self.send_message(update, context, "⚠️ Confirm reboot?", keyboard)
 
-    def reboot_mode(self, mode, update, context):
-        self.send_message(update, context, f"\ud83d\udd04 Rebooting in {mode} mode...")
-        try:
-            if view.ROOT:
-                view.ROOT.on_custom(f"Rebooting to {mode}")
-                sleep(5)
-            subprocess.run(["sudo", "touch", f"/root/.pwnagotchi-{mode}"], check=True)
-            if mode == "manual":
-                subprocess.run(["sudo", "rm", "-f", "/root/.pwnagotchi-auto"], check=True)
-            else:
-                subprocess.run(["sudo", "rm", "-f", "/root/.pwnagotchi-manual"], check=True)
-            subprocess.run(["sudo", "sync"], check=True)
-            subprocess.run(["sudo", "reboot"], check=True)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Reboot failed: {e}")
+    async def confirm_reboot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.send_message(update, context, "🔄 Rebooting...")
+        subprocess.run(["sudo", "reboot"], check=True)
 
-    def shutdown(self, agent, update, context):
+    async def shutdown(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("✅ Confirm", callback_data="confirm_shutdown")],
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
         ]
-        self.send_message(update, context, "\u26a0\ufe0f Confirm shutdown? Device will power off.", keyboard)
+        await self.send_message(update, context, "⚠️ Confirm shutdown?", keyboard)
 
-    def confirm_shutdown(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udce4 Stopping daemon, clearing screen, and shutting down...")
-        try:
-            subprocess.run(["sudo", "systemctl", "stop", "pwnagotchi"], check=True)
-            subprocess.run(["sudo", "pwnagotchi", "--clear"], check=True)
-            if view.ROOT:
-                view.ROOT.on_shutdown()
-                sleep(5)
-            subprocess.run(["sudo", "sync"], check=True)
-            subprocess.run(["sudo", "shutdown", "-h", "now"], check=True)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Shutdown failed: {e}")
+    async def confirm_shutdown(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.send_message(update, context, "⏏️ Shutting down...")
+        subprocess.run(["sudo", "systemctl", "stop", "pwnagotchi"], check=True)
+        subprocess.run(["sudo", "shutdown", "-h", "now"], check=True)
 
-    def uptime(self, agent, update, context):
+    async def uptime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            with open("/proc/uptime", "r", encoding="utf-8") as f:
+            with open("/proc/uptime", "r") as f:
                 uptime_seconds = float(f.readline().split()[0])
             hours = int(uptime_seconds // 3600)
             minutes = int((uptime_seconds % 3600) // 60)
-            self.send_message(update, context, f"\u23f0 Uptime: {hours}h {minutes}m")
+            
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⏳ Uptime: {hours}h {minutes}m", keyboard)
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Error: {e}")
+            await self.send_message(update, context, f"⛔ Error: {e}")
 
-    def handshake_count(self, agent, update, context):
+    async def handshake_count(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             count = len([f for f in os.listdir(HANDSHAKE_DIR) if os.path.isfile(os.path.join(HANDSHAKE_DIR, f))])
-            self.send_message(update, context, f"\ud83e\udd1d Handshakes captured: {count}")
+            
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"🤝 Handshakes: {count}", keyboard)
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Error: {e}")
+            await self.send_message(update, context, f"⛔ Error: {e}")
 
-    def take_screenshot(self, agent, update, context):
+    async def take_screenshot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_photo")
-            display = agent.view()
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_photo")
+            
+            display = self.agent.view()
             screenshot_path = "/root/telepwn_screenshot.png"
             display.image().rotate(self.screen_rotation).save(screenshot_path, "png")
+            
+            user_id = update.effective_user.id
+            self.pending_screenshots[user_id] = screenshot_path
+            
+            keyboard = []
+            if self.options.get("community_enabled"):
+                keyboard = [
+                    [InlineKeyboardButton("📤 Share to Community", callback_data="offer_community_share")],
+                    [InlineKeyboardButton("❌ No Thanks", callback_data="cancel_share")]
+                ]
+            
             with open(screenshot_path, "rb") as photo:
-                context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo)
-            self.send_message(update, context, "\u2705 Screenshot sent!")
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=photo,
+                    caption="📸 Your screenshot",
+                    reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+                )
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Error: {e}")
+            await self.send_message(update, context, f"⛔ Error: {e}")
 
-    def create_backup(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udcbe Creating backup...")
+    async def offer_community_share(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        # Check if community chat is configured
+        if not self.options.get("community_chat_id"):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ Community sharing not configured. Add community_chat_id to config."
+            )
+            return
+        
+        user_id = update.effective_user.id
+        
+        if user_id not in self.pending_screenshots:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="⛔ Screenshot expired.")
+            return
+        
+        can_share, message = self.check_share_limits(user_id)
+        if not can_share:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+            return
+        
+        community_name = self.options["community_chat_id"]
+        keyboard = [
+            [InlineKeyboardButton("✅ Yes, Share", callback_data="confirm_community_share")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_share")]
+        ]
+        
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"⚠️ Share to {community_name}?\n\n{message}",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    def check_share_limits(self, user_id):
+        current_time = time()
+        today = datetime.now().date()
+        
+        last_share = self.user_last_share.get(user_id, 0)
+        if current_time - last_share < SHARE_COOLDOWN:
+            wait_time = SHARE_COOLDOWN - (current_time - last_share)
+            return False, f"⏰ Wait {int(wait_time // 60)}m {int(wait_time % 60)}s"
+        
+        if user_id not in self.user_share_count:
+            self.user_share_count[user_id] = {}
+        
+        self.user_share_count[user_id] = {
+            date: count for date, count in self.user_share_count[user_id].items()
+            if date >= today
+        }
+        
+        shares_today = self.user_share_count[user_id].get(today, 0)
+        if shares_today >= MAX_SHARES_PER_DAY:
+            return False, f"🚫 Daily limit reached ({shares_today}/{MAX_SHARES_PER_DAY})"
+        
+        return True, f"✅ Shares today: {shares_today}/{MAX_SHARES_PER_DAY}"
+
+    async def confirm_community_share(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "Anonymous"
+        
+        screenshot_path = self.pending_screenshots.get(user_id)
+        if not screenshot_path or not os.path.exists(screenshot_path):
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="⛔ Screenshot not found.")
+            return
+        
+        try:
+            handshakes = len([f for f in os.listdir(HANDSHAKE_DIR) if os.path.isfile(os.path.join(HANDSHAKE_DIR, f))])
+            caption = f"📸 Shared by @{username}\n\n#screenshot #pwnagotchi"
+            
+            with open(screenshot_path, "rb") as photo:
+                await context.bot.send_photo(
+                    chat_id=self.options["community_chat_id"],
+                    photo=photo,
+                    caption=caption
+                )
+            
+            current_time = time()
+            today = datetime.now().date()
+            self.user_last_share[user_id] = current_time
+            if today not in self.user_share_count[user_id]:
+                self.user_share_count[user_id][today] = 0
+            self.user_share_count[user_id][today] += 1
+            
+            del self.pending_screenshots[user_id]
+            
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"✅ Shared to @Pwnagotchi_UK_Chat!"
+            )
+        except Exception as e:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"⛔ Failed: {e}")
+
+    async def share_milestone_screenshot(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        username = update.effective_user.username or "Anonymous"
+        
+        can_share, message = self.check_share_limits(user_id)
+        if not can_share:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+            return
+        
+        try:
+            display = self.agent.view()
+            screenshot_path = "/root/telepwn_milestone.png"
+            display.image().rotate(self.screen_rotation).save(screenshot_path, "png")
+            
+            handshakes = len([f for f in os.listdir(HANDSHAKE_DIR) if os.path.isfile(os.path.join(HANDSHAKE_DIR, f))])
+            caption = f"📸 Shared by @{username}\n🎉 Milestone: {handshakes} handshakes!\n\n#milestone #{handshakes}handshakes #pwnagotchi"
+            
+            with open(screenshot_path, "rb") as photo:
+                await context.bot.send_photo(
+                    chat_id=self.options["community_chat_id"],
+                    photo=photo,
+                    caption=caption
+                )
+            
+            current_time = time()
+            today = datetime.now().date()
+            self.user_last_share[user_id] = current_time
+            if user_id not in self.user_share_count:
+                self.user_share_count[user_id] = {}
+            if today not in self.user_share_count[user_id]:
+                self.user_share_count[user_id][today] = 0
+            self.user_share_count[user_id][today] += 1
+            
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"🎉 Milestone shared!"
+            )
+        except Exception as e:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"⛔ Failed: {e}")
+
+    async def cancel_share(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        if user_id in self.pending_screenshots:
+            del self.pending_screenshots[user_id]
+        
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Cancelled")
+
+    async def create_backup(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.send_message(update, context, "💾 Creating backup...")
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"/home/pi/telepwn_backup_{timestamp}.tar.gz"
-            backup_files = [
-                "/root/settings.yaml",
-                "/root/client_secrets.json",
-                "/home/pi/handshakes/",
-                "/root/.api-report.json",
-                "/root/.ssh",
-                "/root/.bashrc",
-                "/root/.profile",
-                "/root/peers",
-                "/etc/pwnagotchi/",
-                "/usr/local/share/pwnagotchi/custom-plugins",
-                "/etc/ssh/",
-                "/home/pi/.bashrc",
-                "/home/pi/.profile",
-                "/root/.auto-update",
-                "/home/pi/.wpa_sec_Uploads",
-            ]
-            existing_files = [f for f in backup_files if os.path.exists(f)]
-            if not existing_files:
-                self.send_message(update, context, "\u26a0 No files found to back up.")
-                return
-            subprocess.run(["sudo", "tar", "czf", backup_path] + existing_files, check=True)
-            size_mb = round(os.path.getsize(backup_path) / (1024 * 1024), 2)
+            subprocess.run(["sudo", "tar", "czf", backup_path, "/etc/pwnagotchi/", "/home/pi/handshakes/"], check=True)
+            
             with open(backup_path, "rb") as backup:
-                context.bot.send_document(chat_id=update.effective_chat.id, document=backup)
-            self.send_message(update, context, f"\u2705 Backup created and sent ({size_mb} MB)")
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Backup failed: {e}")
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=backup)
+            
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, "✅ Backup sent", keyboard)
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Error: {e}")
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⛔ Failed: {e}", keyboard)
 
-    def restart_manual(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udd01 Restarting daemon in manual mode...")
+    async def restart_manual(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            if view.ROOT:
-                view.ROOT.on_custom("Restarting to manual")
-                sleep(5)
+            await self.send_message(update, context, "🔧 Restarting in manual mode...")
             subprocess.run(["sudo", "touch", "/root/.pwnagotchi-manual"], check=True)
-            subprocess.run(["sudo", "rm", "-f", "/root/.pwnagotchi-auto"], check=True)
             subprocess.run(["sudo", "systemctl", "restart", "pwnagotchi"], check=True)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Restart failed: {e}")
+        except Exception as e:
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⛔ Failed: {e}", keyboard)
 
-    def restart_auto(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udd01 Restarting daemon in auto mode...")
+    async def restart_auto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            if view.ROOT:
-                view.ROOT.on_custom("Restarting to auto")
-                sleep(5)
+            await self.send_message(update, context, "🤖 Restarting in auto mode...")
             subprocess.run(["sudo", "touch", "/root/.pwnagotchi-auto"], check=True)
-            subprocess.run(["sudo", "rm", "-f", "/root/.pwnagotchi-manual"], check=True)
             subprocess.run(["sudo", "systemctl", "restart", "pwnagotchi"], check=True)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Restart failed: {e}")
+        except Exception as e:
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⛔ Failed: {e}", keyboard)
 
-    def pwnkill(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udde1\ufe0f Killing daemon...")
+    async def pwnkill(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
+            await self.send_message(update, context, "🗡️ Killing daemon...")
             subprocess.run(["sudo", "killall", "-USR1", "pwnagotchi"], check=True)
-            self.send_message(update, context, "\u2705 Daemon killed and plugins reloaded.", INITIAL_MENU)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Kill failed: {e}")
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, "✅ Daemon killed", keyboard)
+        except Exception as e:
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⛔ Failed: {e}", keyboard)
 
-    def clear(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udda5\ufe0f Clearing screen...")
+    async def clear(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            subprocess.run(["sudo", "pwnagotchi", "--clear"], check=True)
-            if view.ROOT:
-                view.ROOT.on_custom("Screen cleared")
-                sleep(2)
-            self.send_message(update, context, "\u2705 Screen cleared!")
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Clear failed: {e}")
+            # Check if agent and view are available
+            if not self.agent:
+                keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+                await self.send_message(update, context, "⚠️ Running in headless mode (no display to clear)", keyboard)
+                return
+                
+            display = self.agent.view()
+            if not display:
+                keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+                await self.send_message(update, context, "⚠️ No display available", keyboard)
+                return
+                
+            # Clear display
+            display.clear()
+            display.update(force=True)
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, "🖌️ Display cleared!", keyboard)
+        except AttributeError as e:
+            # Handle missing clear() method
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, "⚠️ Clear not supported (headless mode)", keyboard)
+        except Exception as e:
+            self.logger.error(f"Clear failed: {e}")
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⛔ Failed: {e}", keyboard)
 
-    def logs(self, agent, update, context):
+    async def logs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             log_output = subprocess.check_output(["tail", "-n", "50", LOG_PATH], text=True)
-            msg = f"\ud83d\udcdc Last 50 log lines:\n```\n{log_output}\n```"
-            self.send_message(update, context, msg)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Log fetch failed: {e}")
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"📜 Logs:\n```\n{log_output}\n```", keyboard)
+        except Exception as e:
+            await self.send_message(update, context, f"⛔ Failed: {e}")
 
-    def inbox(self, agent, update, context):
-        self.send_message(update, context, "\ud83d\udce5 Checking Pwngrid inbox...")
+    async def inbox(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             inbox_output = subprocess.check_output(["pwngrid", "--inbox"], text=True)
-            msg = f"\ud83d\udce5 Pwngrid Inbox:\n```\n{inbox_output}\n```"
-            self.send_message(update, context, msg)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Inbox fetch failed: {e}")
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"📥 Inbox:\n```\n{inbox_output}\n```", keyboard)
+        except Exception as e:
+            await self.send_message(update, context, f"⛔ Failed: {e}")
 
-    def plugins_menu(self, agent, update, context):
+    async def plugins_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         plugins_found = self.get_plugins()
         if not plugins_found:
-            self.send_message(update, context, "\u26a0 No plugins found.")
+            await self.send_message(update, context, "⚠ No plugins found")
             return
 
         keyboard = []
@@ -637,8 +874,8 @@ class TelePwn(plugins.Plugin):
             state = self.plugin_states.get(plugin, False)
             emoji = "✅" if state else "❌"
             keyboard.append([InlineKeyboardButton(f"{emoji} {plugin}", callback_data=f"toggle_plugin_{plugin}")])
-        keyboard.append([InlineKeyboardButton("Back", callback_data="start")])
-        self.send_message(update, context, "\ud83d\udd27 Toggle Plugins:", keyboard)
+        keyboard.append([InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")])
+        await self.send_message(update, context, "🔩 Plugins:", keyboard)
 
     def get_plugins(self):
         plugins_found = set()
@@ -647,13 +884,12 @@ class TelePwn(plugins.Plugin):
                 if os.path.exists(directory):
                     for filename in os.listdir(directory):
                         if filename.endswith(".py") and filename != "__init__.py":
-                            plugin_name = filename[:-3]
-                            plugins_found.add(plugin_name)
+                            plugins_found.add(filename[:-3])
             except Exception as e:
                 self.logger.error(f"Failed to scan {directory}: {e}")
 
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(CONFIG_FILE, "r") as f:
                 config = toml.load(f)
                 plugins_config = config.get("main", {}).get("plugins", {})
                 for plugin in plugins_found:
@@ -664,29 +900,12 @@ class TelePwn(plugins.Plugin):
         self.last_plugin_list = sorted(plugins_found)
         return self.last_plugin_list
 
-    def toggle_plugin_command(self, agent, update, context):
-        if not context.args:
-            plugins_list = self.last_plugin_list or self.get_plugins()
-            if plugins_list:
-                msg = "Available plugins:\n" + "\n".join([f"- {p} ({'enabled' if self.plugin_states.get(p, False) else 'disabled'})" for p in plugins_list])
-            else:
-                msg = "\u26a0 No plugins found."
-            self.send_message(update, context, f"Usage: /toggle <plugin_name>\n{msg}")
-            return
-
-        plugin_name = context.args[0].strip()
-        if plugin_name not in (self.last_plugin_list or self.get_plugins()):
-            self.send_message(update, context, f"\u26d4 Plugin {plugin_name} not found.")
-            return
-
-        self.toggle_plugin(agent, update, context, plugin_name)
-
-    def toggle_plugin(self, agent, update, context, plugin_name):
+    async def toggle_plugin(self, update: Update, context: ContextTypes.DEFAULT_TYPE, plugin_name):
         current_state = self.plugin_states.get(plugin_name, False)
         new_state = not current_state
-        self.send_message(update, context, f"\ud83d\udd27 Toggling {plugin_name} to {'enabled' if new_state else 'disabled'}...")
+        
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(CONFIG_FILE, "r") as f:
                 config = toml.load(f)
 
             if "main" not in config:
@@ -698,407 +917,63 @@ class TelePwn(plugins.Plugin):
                 config["main"]["plugins"][plugin_name] = {}
             config["main"]["plugins"][plugin_name]["enabled"] = new_state
 
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            with open(CONFIG_FILE, "w") as f:
                 toml.dump(config, f)
 
             self.plugin_states[plugin_name] = new_state
             subprocess.run(["sudo", "killall", "-USR1", "pwnagotchi"], check=True)
-            self.send_message(update, context, f"\u2705 {plugin_name} {'enabled' if new_state else 'disabled'}. Plugins reloaded.")
+            
+            # Refresh the plugins menu to show updated state
+            await self.plugins_menu(update, context)
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Failed to toggle {plugin_name}: {e}")
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, f"⛔ Failed: {e}", keyboard)
 
-    def set_webhook(self, agent, update, context):
-        if len(context.args) < 2:
-            self.send_message(update, context, "Usage: /setwebhook <action> <url> [type] [request/command]\nExample: /setwebhook ping https://discord.com/api/webhooks/12345/abcde notify\nFor plugin_toggle: /setwebhook toggle_memtemp none plugin_toggle")
-            return
-
-        action = context.args[0].strip()
-        url = context.args[1].strip() if context.args[1].strip() != "none" else ""
-        action_type = context.args[2].strip() if len(context.args) > 2 else "notify"
-        extra = " ".join(context.args[3:]).strip() if len(context.args) > 3 else ""
-
-        self.logger.info(f"[TelePwn] Setting webhook: action={action}, url={url}, type={action_type}, extra={extra}")
-        try:
-            # For HTTP webhooks, validate the request format if extra is provided
-            if action_type == "http" and extra:
-                parts = extra.format(degrees="{degrees}").split(" ", 1)
-                if len(parts) != 2:
-                    self.send_message(update, context, "\u26d4 Invalid HTTP request format. Expected format: METHOD <URL>")
-                    return
-
-            self.webhooks[action] = {"url": url, "type": action_type}
-            if action_type == "http" and extra:
-                self.webhooks[action]["request"] = extra
-            elif action_type == "shell" and extra:
-                self.webhooks[action]["command"] = extra
-            elif action_type in ("plugin_toggle", "notify"):
-                pass
-            else:
-                self.send_message(update, context, "\u26d4 Invalid type or missing request/command")
-                return
-
-            self._save_webhooks()
-            self.send_message(update, context, f"\u2705 Webhook set for {action}: {url if url else 'none'}")
-            self.logger.info(f"[TelePwn] Webhook set in memory: {self.webhooks}")
-        except Exception as e:
-            self.send_message(update, context, f"\u26d4 Failed to set webhook: {str(e)}")
-            self.logger.error(f"[TelePwn] Set webhook failed: {e}")
-
-    def webhook(self, agent, update, context):
-        if not context.args:
-            self.send_message(update, context, "Usage: /webhook <action> [extra]\nExample: /webhook ping\nFor plugin_toggle: /webhook toggle_memtemp memtemp")
-            return
-
-        action = context.args[0].strip()
-        extra = " ".join(context.args[1:]).strip() if len(context.args) > 1 else ""
-
-        if action not in self.webhooks:
-            self.send_message(update, context, f"\u26d4 No webhook set for {action}")
-            return
-
-        webhook_config = self.webhooks[action]
-        action_type = webhook_config.get("type", "notify")
-        self.send_message(update, context, f"\ud83d\udd27 Executing {action}...")
-
-        try:
-            if action_type == "plugin_toggle":
-                plugin_name = extra if extra else action.replace("toggle_", "")
-                self.toggle_plugin(agent, update, context, plugin_name)
-            elif action_type == "http" and "request" in webhook_config:
-                request_template = webhook_config["request"]
-                request_str = request_template.format(degrees=extra or "0")
-                parts = request_str.split(" ", 1)
-                if len(parts) != 2:
-                    self.send_message(update, context, "\u26d4 Invalid HTTP request format in webhook configuration.")
-                    return
-                method, url = parts
-                response = requests.request(method, url, timeout=5)
-                response.raise_for_status()
-                self.send_message(update, context, f"\u2705 {action} executed!")
-            elif action_type == "shell" and "command" in webhook_config:
-                command = webhook_config["command"]
-                # Log the raw command for debugging.
-                self.logger.info(f"[TelePwn] Raw command from config: {repr(command)}")
-                command = command.strip()
-                # Explicitly remove the first and last character if they are quotes.
-                if command and (command[0] == '"' or command[0] == "'"):
-                    command = command[1:]
-                if command and (command[-1] == '"' or command[-1] == "'"):
-                    command = command[:-1]
-                self.logger.info(f"[TelePwn] Command after quote removal: {repr(command)}")
-                
-                # Parse extra parameters into a dictionary.
-                params = {}
-                if extra:
-                    for part in extra.split():
-                        if '=' in part:
-                            key, value = part.split('=', 1)
-                            params[key] = value
-                    if not params:
-                        params = {'value': extra}
-                try:
-                    command = command.format(**params)
-                except KeyError as ke:
-                    self.send_message(update, context, f"Missing placeholder for {ke}")
-                    return
-                self.logger.info(f"[TelePwn] Final command to execute: {repr(command)}")
-                result = subprocess.run(
-                    command,
-                    shell=True,
-                    executable="/bin/bash",
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-                self.send_message(update, context, f"\u2705 {action} executed!\nOutput:\n```\n{result.stdout}\n```")
-            elif action_type == "notify":
-                self.send_message(update, context, f"\u2705 {action} triggered!")
-            else:
-                self.send_message(update, context, "\u26d4 Invalid webhook config")
-                return
-
-            if action_type != "plugin_toggle" and webhook_config.get("url"):
-                self.trigger_webhook(action, {
-                    "action": action,
-                    "extra": extra,
-                    "chat_id": update.effective_chat.id
-                })
-        except subprocess.CalledProcessError as e:
-            error_msg = f"\u26d4 {action} failed:\nError:\n```\n{e.stderr}\n```"
-            self.send_message(update, context, error_msg)
-            self.logger.error(f"[TelePwn] Webhook {action} failed: {error_msg}")
-        except Exception as e:
-            self.send_message(update, context, f"\u26d4 {action} failed: {str(e)}")
-            self.logger.error(f"[TelePwn] Webhook {action} failed: {e}")
-
-    def config_editor(self, agent, update, context):
-        if not context.args:
-            self.send_message(update, context, "Usage:\n/config view <section> <key>\n/config set <section> <key> <value>\n/config list\nExample: /config set main.plugins.memtemp enabled true")
-            return
-
-        action = context.args[0].lower()
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = toml.load(f)
-
-            if action == "list":
-                msg = "Config sections and keys:\n"
-                for section, values in config.items():
-                    msg += f"\n[{section}]\n"
-                    if isinstance(values, dict):
-                        for key, val in values.items():
-                            if isinstance(val, dict):
-                                for subkey, subval in val.items():
-                                    msg += f"  {key}.{subkey} = {subval}\n"
-                            else:
-                                msg += f"  {key} = {val}\n"
-                self.send_message(update, context, msg)
-                return
-
-            if len(context.args) < 3:
-                self.send_message(update, context, "Please provide section and key.")
-                return
-
-            section = context.args[1]
-            key_path = context.args[2].split(".")
-            if action == "view":
-                current = config
-                for key in section.split("."):
-                    current = current.get(key, {})
-                for key in key_path:
-                    current = current.get(key, None)
-                    if current is None:
-                        self.send_message(update, context, f"\u26d4 Key {section}.{context.args[2]} not found.")
-                        return
-                self.send_message(update, context, f"\ud83d\udd0d {section}.{context.args[2]} = {current}")
-            elif action == "set":
-                if len(context.args) < 4:
-                    self.send_message(update, context, "Please provide a value to set.")
-                    return
-                value = context.args[3].lower()
-                if value in ("true", "false"):
-                    value = value == "true"
-                elif value.isdigit():
-                    value = int(value)
-                elif value.replace(".", "").isdigit():
-                    value = float(value)
-
-                current = config
-                sections = section.split(".")
-                for i, key in enumerate(sections[:-1]):
-                    if key not in current:
-                        current[key] = {}
-                    current = current[key]
-                last_section = sections[-1]
-                if last_section not in current:
-                    current[last_section] = {}
-
-                target = current[last_section]
-                for key in key_path[:-1]:
-                    if key not in target:
-                        target[key] = {}
-                    target = target[key]
-                target[key_path[-1]] = value
-
-                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                    toml.dump(config, f)
-                self.send_message(update, context, f"\u2705 Set {section}.{context.args[2]} = {value}")
-                subprocess.run(["sudo", "systemctl", "restart", "pwnagotchi"], check=True)
-                self.send_message(update, context, "\u2705 Pwnagotchi restarted to apply changes.")
-        except Exception as e:
-            self.send_message(update, context, f"\u26d4 Failed to edit config: {e}")
-
-    def system_stats(self, agent, update, context):
+    async def system_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             cpu_usage = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
-            memory_usage = memory.percent
             try:
                 with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
                     temp = int(f.read().strip()) / 1000
             except:
                 temp = "N/A"
-            msg = f"\ud83d\udcca System Stats:\nCPU Usage: {cpu_usage}%\nMemory Usage: {memory_usage}%\nTemperature: {temp}°C"
-            self.send_message(update, context, msg)
+            msg = f"📊 Stats:\nCPU: {cpu_usage}%\nMemory: {memory.percent}%\nTemp: {temp}°C"
+            keyboard = [[InlineKeyboardButton("📋 Back to Menu", callback_data="show_menu")]]
+            await self.send_message(update, context, msg, keyboard)
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Failed to fetch stats: {e}")
+            await self.send_message(update, context, f"⛔ Failed: {e}")
 
-    def pwngrid_actions(self, agent, update, context):
-        if not context.args:
-            self.send_message(update, context, "Usage:\n/pwngrid send <message>\n/pwngrid clear\nExample: /pwngrid send Hello from TelePwn")
-            return
-
-        action = context.args[0].lower()
-        try:
-            if action == "send":
-                if len(context.args) < 2:
-                    self.send_message(update, context, "Please provide a message to send.")
-                    return
-                message = " ".join(context.args[1:])
-                subprocess.run(["pwngrid", "--send", message], check=True)
-                self.send_message(update, context, f"\u2705 Sent to Pwngrid: {message}")
-            elif action == "clear":
-                subprocess.run(["pwngrid", "--clear"], check=True)
-                self.send_message(update, context, "\u2705 Pwngrid inbox cleared.")
-            else:
-                self.send_message(update, context, "Invalid action. Use 'send' or 'clear'.")
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Pwngrid action failed: {e}")
-
-    def file_manager(self, agent, update, context):
-        if not context.args:
-            self.send_message(update, context, "Usage:\n/files list\n/files download <filename>\n/files upload\nExample: /files download handshake.pcap")
-            return
-
-        action = context.args[0].lower()
-        try:
-            if action == "list":
-                files = [f for f in os.listdir(HANDSHAKE_DIR) if os.path.isfile(os.path.join(HANDSHAKE_DIR, f))]
-                if not files:
-                    self.send_message(update, context, "\u26a0 No files found in handshake directory.")
-                    return
-                msg = "Files in handshake directory:\n" + "\n".join([f"- {f}" for f in files])
-                self.send_message(update, context, msg)
-            elif action == "download":
-                if len(context.args) < 2:
-                    self.send_message(update, context, "Please provide a filename to download.")
-                    return
-                filename = context.args[1]
-                file_path = os.path.join(HANDSHAKE_DIR, filename)
-                if not os.path.exists(file_path):
-                    self.send_message(update, context, f"\u26d4 File {filename} not found.")
-                    return
-                with open(file_path, "rb") as f:
-                    context.bot.send_document(chat_id=update.effective_chat.id, document=f)
-                self.send_message(update, context, f"\u2705 Sent file: {filename}")
-            elif action == "upload":
-                # Set the user's state to "waiting for upload"
-                chat_id = update.effective_chat.id
-                self.user_states[chat_id] = "waiting_for_upload"
-                self.send_message(update, context, "Please send the handshake file to upload to /home/pi/handshakes/.\nOnly .pcap or .pcapng files are allowed.")
-            else:
-                self.send_message(update, context, "Invalid action. Use 'list', 'download', or 'upload'.")
-        except Exception as e:
-            self.send_message(update, context, f"\u26d4 File action failed: {e}")
-
-    def handle_document_upload(self, agent, update, context):
+    async def handle_document_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
-        # Check if the user is in "upload mode"
         if chat_id not in self.user_states or self.user_states[chat_id] != "waiting_for_upload":
-            self.send_message(update, context, "Please use /files upload to start the upload process.")
             return
 
-        # Clear the user's state
         del self.user_states[chat_id]
 
-        # Check if the message contains a document
         if not update.message.document:
-            self.send_message(update, context, "\u26d4 Please send a file (document).")
+            await update.message.reply_text("⛔ Please send a file")
             return
 
         document = update.message.document
         file_name = document.file_name
 
-        # Validate file type (only allow .pcap or .pcapng for handshakes)
         if not (file_name.endswith('.pcap') or file_name.endswith('.pcapng')):
-            self.send_message(update, context, "\u26d4 Only .pcap or .pcapng files are allowed for handshakes.")
+            await update.message.reply_text("⛔ Only .pcap or .pcapng files")
             return
 
         try:
-            # Download the file
-            file = context.bot.get_file(document.file_id)
+            file = await context.bot.get_file(document.file_id)
             file_path = os.path.join(HANDSHAKE_DIR, file_name)
 
-            # Check if file already exists
             if os.path.exists(file_path):
-                self.send_message(update, context, f"\u26d4 File {file_name} already exists in {HANDSHAKE_DIR}.")
+                await update.message.reply_text(f"⛔ {file_name} already exists")
                 return
 
-            # Download and save the file
-            file.download(file_path)
-
-            # Set appropriate permissions (readable/writable by pi user)
+            await file.download_to_drive(file_path)
             os.chmod(file_path, 0o644)
-            os.chown(file_path, 1000, 1000)  # pi user and group (uid 1000, gid 1000)
+            os.chown(file_path, 1000, 1000)
 
-            # Confirm success
-            self.send_message(update, context, f"\u2705 File {file_name} uploaded to {HANDSHAKE_DIR}.")
-            self.logger.info(f"[TelePwn] Uploaded file {file_name} to {HANDSHAKE_DIR}")
+            await update.message.reply_text(f"✅ Uploaded {file_name}")
         except Exception as e:
-            self.send_message(update, context, f"\u26d4 Failed to upload file: {str(e)}")
-            self.logger.error(f"[TelePwn] Failed to upload file {file_name}: {e}")
-
-    def schedule_manager(self, agent, update, context):
-        if not context.args:
-            self.send_message(update, context, "Usage:\n/schedule add <action> <interval_hours>\n/schedule remove <task_id>\n/schedule list\nExample: /schedule add reboot 24")
-            return
-
-        action = context.args[0].lower()
-        try:
-            if action == "list":
-                if not self.schedules:
-                    self.send_message(update, context, "\u26a0 No scheduled tasks.")
-                    return
-                msg = "Scheduled tasks:\n"
-                for task_id, task in self.schedules.items():
-                    msg += f"ID: {task_id} - {task['action']} every {task['interval']} hours\n"
-                self.send_message(update, context, msg)
-            elif action == "add":
-                if len(context.args) < 3:
-                    self.send_message(update, context, "Please provide action and interval (in hours).")
-                    return
-                task_action = context.args[1].lower()
-                if task_action not in ("reboot", "backup"):
-                    self.send_message(update, context, "Invalid action. Use 'reboot' or 'backup'.")
-                    return
-                interval = int(context.args[2])
-                if interval <= 0:
-                    self.send_message(update, context, "Interval must be a positive number.")
-                    return
-                task_id = str(len(self.schedules) + 1)
-                self.schedules[task_id] = {"action": task_action, "interval": interval}
-                self._save_schedules()
-                self.stop_scheduler()
-                self.start_scheduler()
-                self.send_message(update, context, f"\u2705 Scheduled {task_action} every {interval} hours (ID: {task_id})")
-            elif action == "remove":
-                if len(context.args) < 2:
-                    self.send_message(update, context, "Please provide the task ID to remove.")
-                    return
-                task_id = context.args[1]
-                if task_id not in self.schedules:
-                    self.send_message(update, context, f"\u26d4 Task ID {task_id} not found.")
-                    return
-                del self.schedules[task_id]
-                self._save_schedules()
-                self.stop_scheduler()
-                self.start_scheduler()
-                self.send_message(update, context, f"\u2705 Removed scheduled task (ID: {task_id})")
-            else:
-                self.send_message(update, context, "Invalid action. Use 'add', 'remove', or 'list'.")
-        except Exception as e:
-            self.send_message(update, context, f"\u26d4 Schedule action failed: {e}")
-
-    def shell_command(self, agent, update, context):
-        if not context.args:
-            self.send_message(update, context, "Usage: /shell <command>\nExample: /shell ls -la")
-            return
-
-        command = " ".join(context.args)
-        keyboard = [
-            [InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_shell_{command}")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
-        ]
-        self.send_message(update, context, f"\u26a0\ufe0f Confirm running shell command?\nCommand: {command}", keyboard)
-
-    def execute_shell_command(self, agent, update, context, command):
-        try:
-            output = subprocess.check_output(command, shell=True, text=True, stderr=subprocess.STDOUT)
-            msg = f"\ud83d\udcbb Shell command executed:\nCommand: {command}\nOutput:\n```\n{output}\n```"
-            self.send_message(update, context, msg)
-        except subprocess.CalledProcessError as e:
-            self.send_message(update, context, f"\u26d4 Shell command failed:\nCommand: {command}\nError:\n```\n{e.output}\n```")
-
-if __name__ == "__main__":
-    plugin = TelePwn()
-    plugin.on_loaded()
+            await update.message.reply_text(f"⛔ Failed: {e}")
