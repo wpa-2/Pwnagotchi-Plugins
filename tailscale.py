@@ -25,7 +25,6 @@ class Tailscale(plugins.Plugin):
         self.options.setdefault('sync_interval_secs', 600)
         self.options.setdefault('source_handshake_path', '/home/pi/handshakes/')
         self.options.setdefault('hostname', 'pwnagotchi')
-        self.options.setdefault('ui_position', (175, 76))  # Default position for 250x122 displays
 
         # Validate that all required options are present
         required = ['auth_key', 'server_tailscale_ip', 'server_user', 'handshake_dir']
@@ -43,16 +42,11 @@ class Tailscale(plugins.Plugin):
 
     def on_ui_setup(self, ui):
         self.ui = ui
-        # Convert position tuple from config if it's a list
-        position = self.options['ui_position']
-        if isinstance(position, list):
-            position = tuple(position)
-            
         self.ui.add_element('ts_status', LabeledValue(
             color=BLACK,
             label='TS:',
             value=self.status,
-            position=position,
+            position=(175, 76),
             label_font=fonts.Small,
             text_font=fonts.Small
         ))
@@ -137,9 +131,10 @@ class Tailscale(plugins.Plugin):
         server_user = self.options['server_user']
         server_ip = self.options['server_tailscale_ip']
         
+        # Use dedicated SSH key to avoid conflicts with other plugins (e.g., WireGuard)
         command = [
             "rsync", "-avz", "--stats", "-e", 
-            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o UserKnownHostsFile=/dev/null",
+            "ssh -i /root/.ssh/id_rsa_tailscale -o StrictHostKeyChecking=no -o BatchMode=yes -o UserKnownHostsFile=/dev/null",
             source_dir, f"{server_user}@{server_ip}:{remote_dir}"
         ]
 
