@@ -103,6 +103,8 @@ source_handshake_path = "/home/pi/handshakes/" # Local handshake directory (NOTE
 **Configuration Notes:**
 * **Required fields:** `auth_key`, `server_tailscale_ip`, `server_user`, `handshake_dir`
 * **Optional fields:** All others have sensible defaults
+* **Hostname:** Must be a valid DNS label (lowercase letters, numbers, hyphens only). Examples: `pwnagotchi`, `pwn-01`, `my-device`
+* **DNS:** The plugin automatically disables Tailscale DNS (`--accept-dns=false`) to prevent conflicts with Pwnagotchi's network setup
 * **Trailing Slash:** The `source_handshake_path` **must** end with a `/` for rsync to work correctly
 * **Sync Interval:** Value is in seconds. 600 = 10 minutes, 300 = 5 minutes, etc.
 
@@ -219,8 +221,31 @@ The plugin displays a status indicator on the Pwnagotchi screen with the label `
 
 #### Plugin loops on "Conn..." (v1.0.0 only)
 * This was a bug in v1.0.0 where the plugin incorrectly validated Tailscale connection status
-* **Solution:** Update to v1.0.1 or later
+* **Solution:** Update to v1.0.2 or later
 * The fix changed validation from looking for "Logged in as" to checking exit codes
+
+#### DNS/Network Issues - Can't Resolve Hostnames
+If you experience DNS issues (rare with v1.0.1+ as `--accept-dns=false` is now default):
+
+* **Symptom:** Can't ping external hosts (e.g., `ping google.com` fails) after Tailscale connects
+* **Cause:** Tailscale DNS conflicts with Pwnagotchi's network configuration
+* **Check if already set:** `sudo tailscale status --json | grep AcceptDNS` (should show `false`)
+* **Manual fix if needed:**
+  ```bash
+  sudo tailscale set --accept-dns=false
+  sudo systemctl restart pwnagotchi
+  ```
+* **Verify:** After restarting, test: `ping -c 4 google.com`
+
+#### Invalid Hostname
+Tailscale has strict hostname requirements (DNS label format):
+
+* **Valid:** lowercase letters, numbers, hyphens (e.g., `pwnagotchi`, `pwn-01`, `my-device`)
+* **Invalid:** uppercase, underscores, spaces, special characters (e.g., `My_Pwn`, `pwn@gotchi`)
+* **Plugin warning:** v1.0.2+ will log a warning if hostname appears invalid
+* **Error:** Plugin connects but device doesn't appear in Tailscale admin, or connection fails
+* **Solution:** Change `hostname` in config.toml to a valid DNS label and restart
+* **Check logs:** `sudo journalctl -u pwnagotchi | grep Tailscale` to see hostname warnings
 
 #### Handshakes not appearing on server
 * Verify the Pwnagotchi is actually capturing handshakes: `ls -la /home/pi/handshakes/`

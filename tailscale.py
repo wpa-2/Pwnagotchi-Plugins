@@ -10,7 +10,7 @@ from pwnagotchi.ui.view import BLACK
 
 class Tailscale(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.0.1'
+    __version__ = '1.0.2'
     __license__ = 'GPL3'
     __description__ = 'A configurable plugin to connect to a Tailscale network and sync handshakes.'
 
@@ -32,6 +32,14 @@ class Tailscale(plugins.Plugin):
         if missing:
             logging.error(f"[Tailscale] Missing required config options: {', '.join(missing)}")
             return
+        
+        # Validate hostname (DNS label format for Tailscale)
+        hostname = self.options['hostname']
+        import re
+        if not re.match(r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$', hostname):
+            logging.warning(f"[Tailscale] Hostname '{hostname}' may not be valid. Use lowercase letters, numbers, and hyphens only.")
+            logging.warning("[Tailscale] Valid examples: 'pwnagotchi', 'pwn-01', 'my-device'")
+            # Continue anyway - let Tailscale reject it if invalid
             
         if not os.path.exists('/usr/bin/tailscale') or not os.path.exists('/usr/bin/rsync'):
             logging.error("[Tailscale] tailscale or rsync is not installed.")
@@ -97,7 +105,8 @@ class Tailscale(plugins.Plugin):
                 connect_command = [
                     "tailscale", "up",
                     f"--authkey={self.options['auth_key']}",
-                    f"--hostname={self.options['hostname']}"
+                    f"--hostname={self.options['hostname']}",
+                    "--accept-dns=false"  # Prevent DNS conflicts with Pwnagotchi's network setup
                 ]
                 subprocess.run(connect_command, check=True, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                 
