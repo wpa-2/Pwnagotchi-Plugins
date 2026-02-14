@@ -10,7 +10,7 @@ from pwnagotchi.ui.view import BLACK
 
 class Tailscale(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.0.2'
+    __version__ = '1.0.3'
     __license__ = 'GPL3'
     __description__ = 'A configurable plugin to connect to a Tailscale network and sync handshakes.'
 
@@ -25,6 +25,7 @@ class Tailscale(plugins.Plugin):
         self.options.setdefault('sync_interval_secs', 600)
         self.options.setdefault('source_handshake_path', '/home/pi/handshakes/')
         self.options.setdefault('hostname', 'pwnagotchi')
+        self.options.setdefault('ssh_port', 22)
 
         # Validate that all required options are present
         required = ['auth_key', 'server_tailscale_ip', 'server_user', 'handshake_dir']
@@ -139,11 +140,12 @@ class Tailscale(plugins.Plugin):
         remote_dir = self.options['handshake_dir']
         server_user = self.options['server_user']
         server_ip = self.options['server_tailscale_ip']
+        ssh_port = self.options['ssh_port']
         
         # Use dedicated SSH key to avoid conflicts with other plugins (e.g., WireGuard)
         command = [
             "rsync", "-avz", "--stats", "-e", 
-            "ssh -i /root/.ssh/id_rsa_tailscale -o StrictHostKeyChecking=no -o BatchMode=yes -o UserKnownHostsFile=/dev/null",
+            f"ssh -p {ssh_port} -i /root/.ssh/id_rsa_tailscale -o StrictHostKeyChecking=no -o BatchMode=yes -o UserKnownHostsFile=/dev/null",
             source_dir, f"{server_user}@{server_ip}:{remote_dir}"
         ]
 

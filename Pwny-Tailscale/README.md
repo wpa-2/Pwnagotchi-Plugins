@@ -98,12 +98,14 @@ handshake_dir = "/path/to/remote/handshakes/" # Destination folder on your serve
 hostname = "pwnagotchi" # Custom device name in Tailnet
 sync_interval_secs = 600 # How often to sync handshakes (10 minutes)
 source_handshake_path = "/home/pi/handshakes/" # Local handshake directory (NOTE: trailing slash required)
+ssh_port = 22 # SSH port on your server (change if using non-standard port like 2222)
 ```
 
 **Configuration Notes:**
 * **Required fields:** `auth_key`, `server_tailscale_ip`, `server_user`, `handshake_dir`
 * **Optional fields:** All others have sensible defaults
 * **Hostname:** Must be a valid DNS label (lowercase letters, numbers, hyphens only). Examples: `pwnagotchi`, `pwn-01`, `my-device`
+* **SSH Port:** Default is 22. If your server uses a different port (e.g., 2222), set `ssh_port = 2222`
 * **DNS:** The plugin automatically disables Tailscale DNS (`--accept-dns=false`) to prevent conflicts with Pwnagotchi's network setup
 * **Trailing Slash:** The `source_handshake_path` **must** end with a `/` for rsync to work correctly
 * **Sync Interval:** Value is in seconds. 600 = 10 minutes, 300 = 5 minutes, etc.
@@ -201,15 +203,22 @@ The plugin displays a status indicator on the Pwnagotchi screen with the label `
   ```bash
   sudo rsync -avz -e "ssh -i /root/.ssh/id_rsa_tailscale" /home/pi/handshakes/ your-server-user@100.X.X.X:/path/to/remote/handshakes/
   ```
+  If using custom SSH port (e.g., 2222):
+  ```bash
+  sudo rsync -avz -e "ssh -p 2222 -i /root/.ssh/id_rsa_tailscale" /home/pi/handshakes/ your-server-user@100.X.X.X:/path/to/remote/handshakes/
+  ```
 * **Common issues:**
   * SSH key not properly configured (see Step 6)
-  * Incorrect server IP address
+  * **Wrong SSH port** - if your server uses port 2222, add `ssh_port = 2222` to config.toml
+  * Incorrect server IP address (should be `100.x.x.x` from `tailscale ip -4`, NOT WireGuard/Twingate IP)
   * Wrong username or destination path
   * Missing trailing slash on `source_handshake_path`
   * Dedicated key file doesn't exist: `ls -la /root/.ssh/id_rsa_tailscale*`
 * **Verify SSH key** is working:
   ```bash
   sudo ssh -i /root/.ssh/id_rsa_tailscale your-server-user@100.X.X.X
+  # Or with custom port:
+  sudo ssh -i /root/.ssh/id_rsa_tailscale -p 2222 your-server-user@100.X.X.X
   ```
   Should connect without password prompt.
 * **Check server permissions:**
@@ -221,7 +230,7 @@ The plugin displays a status indicator on the Pwnagotchi screen with the label `
 
 #### Plugin loops on "Conn..." (v1.0.0 only)
 * This was a bug in v1.0.0 where the plugin incorrectly validated Tailscale connection status
-* **Solution:** Update to v1.0.2 or later
+* **Solution:** Update to v1.0.3 or later
 * The fix changed validation from looking for "Logged in as" to checking exit codes
 
 #### DNS/Network Issues - Can't Resolve Hostnames
