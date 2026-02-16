@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 import time
+from datetime import date
 
 import pwnagotchi.plugins as plugins
 import pwnagotchi.ui.fonts as fonts
@@ -10,13 +11,22 @@ from pwnagotchi.ui.view import BLACK
 
 class Tailscale(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.0.3'
+    __version__ = '1.0.5'
     __license__ = 'GPL3'
     __description__ = 'A configurable plugin to connect to a Tailscale network and sync handshakes.'
 
     def __init__(self):
         self.ready = False
         self.status = "Starting"
+        self.stats = {
+            'today_synced': 0,
+            'total_synced': 0,
+            'last_sync_time': None,
+            'last_sync_count': 0,
+            'today_date': None
+        }
+        self.daily_sync_count = 0
+        self.last_reset_date = None
 
     def on_loaded(self):
         logging.info("[Tailscale] Plugin loaded.")
@@ -90,7 +100,6 @@ class Tailscale(plugins.Plugin):
         retry_delay = 15
         
         for attempt in range(max_retries):
-            logging.info(f"[Tailscale] Attempting to connect (Attempt {attempt + 1}/{max_retries})...")
             self._update_status("Conn...")
 
             try:
@@ -99,10 +108,13 @@ class Tailscale(plugins.Plugin):
                 # A successful status command (exit code 0) with output means we're connected
                 if status_result.returncode == 0 and status_result.stdout.strip():
                     self._update_status("Up")
-                    logging.info("[Tailscale] Already connected to Tailscale.")
+                    # Only log on first connection or if verbose logging needed
+                    if attempt == 0:
+                        logging.debug("[Tailscale] Already connected to Tailscale.")
                     return True
 
                 # Attempt to connect
+                logging.info(f"[Tailscale] Connecting to Tailscale (Attempt {attempt + 1}/{max_retries})...")
                 connect_command = [
                     "tailscale", "up",
                     f"--authkey={self.options['auth_key']}",
@@ -133,7 +145,6 @@ class Tailscale(plugins.Plugin):
         return False
 
     def _sync_handshakes(self):
-        logging.info("[Tailscale] Starting handshake sync...")
         self._update_status("Sync...")
         
         source_dir = self.options['source_handshake_path']
@@ -157,7 +168,25 @@ class Tailscale(plugins.Plugin):
                     new_files = int(line.split(":")[1].strip().split(" ")[0])
                     break
             
-            logging.info(f"[Tailscale] Sync complete. Transferred {new_files} new files.")
+            # Update statistics
+            from datetime import datetime
+            now = datetime.now()
+            today = now.strftime('%Y-%m-%d')
+            
+            # Reset daily counter if it's a new day
+            if self.stats['today_date'] != today:
+                self.stats['today_synced'] = 0
+                self.stats['today_date'] = today
+            
+            self.stats['today_synced'] += new_files
+            self.stats['total_synced'] += new_files
+            self.stats['last_sync_time'] = now.strftime('%Y-%m-%d %H:%M:%S')
+            self.stats['last_sync_count'] = new_files
+            
+            # Only log when files are actually transferred
+            if new_files > 0:
+                logging.info(f"[Tailscale] Synced {new_files} new handshake(s).")
+            
             # Keep status concise for small displays
             if new_files > 99:
                 self._update_status("Sync:99+", temporary=True)
@@ -182,6 +211,176 @@ class Tailscale(plugins.Plugin):
             now = time.time()
             if now - self.last_sync_time > self.options['sync_interval_secs']:
                 self._sync_handshakes()
+
+    def on_webhook(self, path, request):
+        """Handle web UI requests for sync statistics."""
+        from datetime import datetime
+        
+        # Get current connection status
+        try:
+            status_result = subprocess.run(["tailscale", "status", "--json"], 
+                                         capture_output=True, text=True, timeout=5)
+            if status_result.returncode == 0:
+                import json
+                ts_status = json.loads(status_result.stdout)
+                tailscale_info = {
+                    'connected': True,
+                    'hostname': self.options.get('hostname', 'unknown'),
+                    'ip': ts_status.get('Self', {}).get('TailscaleIPs', ['unknown'])[0] if ts_status.get('Self') else 'unknown'
+                }
+            else:
+                tailscale_info = {'connected': False}
+        except Exception:
+            tailscale_info = {'connected': False}
+        
+        # Format last sync time
+        last_sync = self.stats['last_sync_time'] or 'Never'
+        next_sync = 'Unknown'
+        if self.last_sync_time > 0:
+            next_sync_seconds = int(self.options['sync_interval_secs'] - (time.time() - self.last_sync_time))
+            if next_sync_seconds > 0:
+                next_sync = f"{next_sync_seconds // 60}m {next_sync_seconds % 60}s"
+            else:
+                next_sync = "Due now"
+        
+        # Generate HTML response
+        html = f"""
+        <html>
+        <head>
+            <title>Tailscale Sync Statistics</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #1a1a1a;
+                    color: #e0e0e0;
+                    padding: 20px;
+                    margin: 0;
+                }}
+                .container {{
+                    max-width: 600px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #4CAF50;
+                    border-bottom: 2px solid #4CAF50;
+                    padding-bottom: 10px;
+                }}
+                .stat-box {{
+                    background-color: #2a2a2a;
+                    border-left: 4px solid #4CAF50;
+                    padding: 15px;
+                    margin: 15px 0;
+                    border-radius: 4px;
+                }}
+                .stat-label {{
+                    color: #888;
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    margin-bottom: 5px;
+                }}
+                .stat-value {{
+                    font-size: 24px;
+                    font-weight: bold;
+                    color: #4CAF50;
+                }}
+                .status-connected {{
+                    color: #4CAF50;
+                }}
+                .status-disconnected {{
+                    color: #f44336;
+                }}
+                .info-row {{
+                    display: flex;
+                    justify-content: space-between;
+                    margin: 8px 0;
+                    padding: 8px;
+                    background-color: #333;
+                    border-radius: 3px;
+                }}
+                .info-label {{
+                    color: #888;
+                }}
+                .info-value {{
+                    color: #e0e0e0;
+                    font-weight: bold;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>📡 Tailscale Sync Statistics</h1>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Today's Synced Handshakes</div>
+                    <div class="stat-value">{self.stats['today_synced']}</div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Total Synced (This Session)</div>
+                    <div class="stat-value">{self.stats['total_synced']}</div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Connection Status</div>
+                    <div class="info-row">
+                        <span class="info-label">Tailscale:</span>
+                        <span class="info-value {'status-connected' if tailscale_info['connected'] else 'status-disconnected'}">
+                            {'Connected' if tailscale_info['connected'] else 'Disconnected'}
+                        </span>
+                    </div>
+                    {f'''
+                    <div class="info-row">
+                        <span class="info-label">Hostname:</span>
+                        <span class="info-value">{tailscale_info.get('hostname', 'unknown')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Tailscale IP:</span>
+                        <span class="info-value">{tailscale_info.get('ip', 'unknown')}</span>
+                    </div>
+                    ''' if tailscale_info['connected'] else ''}
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Sync Information</div>
+                    <div class="info-row">
+                        <span class="info-label">Last Sync:</span>
+                        <span class="info-value">{last_sync}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Last Count:</span>
+                        <span class="info-value">{self.stats['last_sync_count']} files</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Next Sync:</span>
+                        <span class="info-value">{next_sync}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Sync Interval:</span>
+                        <span class="info-value">{self.options['sync_interval_secs'] // 60} minutes</span>
+                    </div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Server Configuration</div>
+                    <div class="info-row">
+                        <span class="info-label">Server IP:</span>
+                        <span class="info-value">{self.options['server_tailscale_ip']}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">SSH Port:</span>
+                        <span class="info-value">{self.options.get('ssh_port', 22)}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Remote Path:</span>
+                        <span class="info-value">{self.options['handshake_dir']}</span>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html
 
     def on_unload(self, ui):
         logging.info("[Tailscale] Unloading plugin.")

@@ -13,7 +13,7 @@ from pwnagotchi.ui.view import BLACK
 
 class WireGuard(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.1'
+    __version__ = '2.2'
     __license__ = 'GPL3'
     __description__ = 'VPN Sync: Full backup on first run, then incremental only. (Enhanced Edition - Fixed)'
 
@@ -33,8 +33,11 @@ class WireGuard(plugins.Plugin):
         
         # Statistics
         self.total_synced = 0
+        self.today_synced = 0
+        self.today_date = None
         self.connection_uptime_start = 0
         self.last_successful_sync = 0
+        self.last_sync_count = 0
         self.connection_attempts = 0
         self.failed_attempts = 0
         
@@ -543,13 +546,25 @@ PersistentKeepalive = {self.options['persistent_keepalive']}
                 # Success! Update marker timestamp to now
                 os.utime(self.marker_file, None)
                 
+                # Update statistics with daily counter
+                from datetime import datetime
+                now = datetime.now()
+                today = now.strftime('%Y-%m-%d')
+                
+                # Reset daily counter if it's a new day
+                if self.today_date != today:
+                    self.today_synced = 0
+                    self.today_date = today
+                
+                self.today_synced += file_count
                 self.total_synced += file_count
                 self.last_successful_sync = time.time()
                 self.last_sync_time = time.time()
+                self.last_sync_count = file_count
                 
                 msg = f"Sync:{file_count}"
                 self.update_status(msg)
-                logging.info(f"[WireGuard] Successfully synced {file_count} files. Total: {self.total_synced}")
+                logging.info(f"[WireGuard] Successfully synced {file_count} files. Today: {self.today_synced}, Total: {self.total_synced}")
                 
                 # Reset to "Up" after 10 seconds
                 self.status_timer = threading.Timer(10.0, self.update_status, ["Up"])
@@ -657,6 +672,294 @@ PersistentKeepalive = {self.options['persistent_keepalive']}
                     name="WireGuard-Sync",
                     daemon=True
                 ).start()
+
+    def on_webhook(self, path, request):
+        """Handle web UI requests for WireGuard statistics."""
+        from datetime import datetime
+        
+        # Get WireGuard interface stats
+        wg_info = self._get_wireguard_stats()
+        
+        # Calculate connection uptime
+        uptime_str = "Not connected"
+        if self.connection_uptime_start > 0 and self.status == "Up":
+            uptime_seconds = int(time.time() - self.connection_uptime_start)
+            hours = uptime_seconds // 3600
+            minutes = (uptime_seconds % 3600) // 60
+            seconds = uptime_seconds % 60
+            uptime_str = f"{hours}h {minutes}m {seconds}s"
+        
+        # Format last sync time
+        last_sync_str = "Never"
+        if self.last_successful_sync > 0:
+            last_sync_dt = datetime.fromtimestamp(self.last_successful_sync)
+            last_sync_str = last_sync_dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Calculate next sync
+        next_sync_str = "Unknown"
+        if self.last_sync_time > 0 and self.status == "Up":
+            next_sync_seconds = int(self.sync_interval - (time.time() - self.last_sync_time))
+            if next_sync_seconds > 0:
+                next_sync_str = f"{next_sync_seconds // 60}m {next_sync_seconds % 60}s"
+            else:
+                next_sync_str = "Due now"
+        
+        # Connection status
+        is_connected = self.status == "Up"
+        status_class = 'status-connected' if is_connected else 'status-disconnected'
+        
+        # Health status
+        health_status = "Healthy"
+        health_class = "status-connected"
+        if self.consecutive_health_failures > 0:
+            health_status = f"Degraded ({self.consecutive_health_failures}/3 failures)"
+            health_class = "status-warning"
+        elif not is_connected:
+            health_status = "Disconnected"
+            health_class = "status-disconnected"
+        
+        # Generate HTML
+        html = f"""
+        <html>
+        <head>
+            <title>WireGuard Statistics</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta http-equiv="refresh" content="30">
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    background-color: #1a1a1a;
+                    color: #e0e0e0;
+                    padding: 20px;
+                    margin: 0;
+                }}
+                .container {{
+                    max-width: 700px;
+                    margin: 0 auto;
+                }}
+                h1 {{
+                    color: #FF6B35;
+                    border-bottom: 2px solid #FF6B35;
+                    padding-bottom: 10px;
+                }}
+                .stat-box {{
+                    background-color: #2a2a2a;
+                    border-left: 4px solid #FF6B35;
+                    padding: 15px;
+                    margin: 15px 0;
+                    border-radius: 4px;
+                }}
+                .stat-label {{
+                    color: #888;
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    margin-bottom: 5px;
+                }}
+                .stat-value {{
+                    font-size: 24px;
+                    font-weight: bold;
+                    color: #FF6B35;
+                }}
+                .status-connected {{
+                    color: #4CAF50;
+                }}
+                .status-disconnected {{
+                    color: #f44336;
+                }}
+                .status-warning {{
+                    color: #ff9800;
+                }}
+                .info-row {{
+                    display: flex;
+                    justify-content: space-between;
+                    margin: 8px 0;
+                    padding: 8px;
+                    background-color: #333;
+                    border-radius: 3px;
+                }}
+                .info-label {{
+                    color: #888;
+                }}
+                .info-value {{
+                    color: #e0e0e0;
+                    font-weight: bold;
+                }}
+                .refresh-note {{
+                    text-align: center;
+                    color: #666;
+                    font-size: 12px;
+                    margin-top: 20px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🔒 WireGuard Statistics</h1>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Today's Synced Handshakes</div>
+                    <div class="stat-value">{self.today_synced}</div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Total Synced (This Session)</div>
+                    <div class="stat-value">{self.total_synced}</div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Connection Status</div>
+                    <div class="info-row">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value {status_class}">
+                            {self.status}
+                        </span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Health:</span>
+                        <span class="info-value {health_class}">{health_status}</span>
+                    </div>
+                    {f'''
+                    <div class="info-row">
+                        <span class="info-label">VPN IP:</span>
+                        <span class="info-value">{self.options.get('address', 'unknown').split('/')[0]}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Uptime:</span>
+                        <span class="info-value">{uptime_str}</span>
+                    </div>
+                    ''' if is_connected else ''}
+                </div>
+                
+                {f'''
+                <div class="stat-box">
+                    <div class="stat-label">WireGuard Interface</div>
+                    <div class="info-row">
+                        <span class="info-label">Interface:</span>
+                        <span class="info-value">{wg_info.get('interface', 'wg0')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Endpoint:</span>
+                        <span class="info-value">{wg_info.get('endpoint', 'unknown')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Last Handshake:</span>
+                        <span class="info-value">{wg_info.get('last_handshake', 'Never')}</span>
+                    </div>
+                    {f'''
+                    <div class="info-row">
+                        <span class="info-label">Transfer (RX/TX):</span>
+                        <span class="info-value">{wg_info.get('transfer', 'unknown')}</span>
+                    </div>
+                    ''' if wg_info.get('transfer') else ''}
+                </div>
+                ''' if is_connected else ''}
+                
+                <div class="stat-box">
+                    <div class="stat-label">Sync Information</div>
+                    <div class="info-row">
+                        <span class="info-label">Last Sync:</span>
+                        <span class="info-value">{last_sync_str}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Last Count:</span>
+                        <span class="info-value">{self.last_sync_count} files</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Next Sync:</span>
+                        <span class="info-value">{next_sync_str}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Sync Interval:</span>
+                        <span class="info-value">{self.sync_interval // 60} minutes</span>
+                    </div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Connection Statistics</div>
+                    <div class="info-row">
+                        <span class="info-label">Total Attempts:</span>
+                        <span class="info-value">{self.connection_attempts}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Failed Attempts:</span>
+                        <span class="info-value">{self.failed_attempts}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Success Rate:</span>
+                        <span class="info-value">
+                            {f"{((self.connection_attempts - self.failed_attempts) / self.connection_attempts * 100):.1f}%" if self.connection_attempts > 0 else "N/A"}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="stat-box">
+                    <div class="stat-label">Server Configuration</div>
+                    <div class="info-row">
+                        <span class="info-label">Server VPN IP:</span>
+                        <span class="info-value">{self.options['server_vpn_ip']}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">SSH Port:</span>
+                        <span class="info-value">{self.options['server_port']}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Remote Path:</span>
+                        <span class="info-value">{self.options['handshake_dir']}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Compression:</span>
+                        <span class="info-value">Level {self.options['compress_level']}</span>
+                    </div>
+                    {f'''
+                    <div class="info-row">
+                        <span class="info-label">Bandwidth Limit:</span>
+                        <span class="info-value">{self.options['bwlimit']} KB/s</span>
+                    </div>
+                    ''' if self.options.get('bwlimit', 0) > 0 else ''}
+                </div>
+                
+                <div class="refresh-note">
+                    Page auto-refreshes every 30 seconds
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html
+
+    def _get_wireguard_stats(self) -> dict:
+        """Get WireGuard interface statistics using wg command."""
+        stats = {
+            'interface': 'wg0',
+            'endpoint': self.options.get('peer_endpoint', 'unknown'),
+            'last_handshake': 'Never',
+            'transfer': None
+        }
+        
+        try:
+            result = subprocess.run(
+                ["wg", "show", "wg0"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                output = result.stdout
+                
+                # Parse last handshake time
+                for line in output.split('\n'):
+                    if 'latest handshake:' in line:
+                        handshake_str = line.split('latest handshake:')[1].strip()
+                        stats['last_handshake'] = handshake_str
+                    elif 'transfer:' in line:
+                        transfer_str = line.split('transfer:')[1].strip()
+                        stats['transfer'] = transfer_str
+                        
+        except Exception as e:
+            logging.debug(f"[WireGuard] Could not get interface stats: {e}")
+        
+        return stats
 
     def on_unload(self, ui):
         """Graceful shutdown with cleanup."""
