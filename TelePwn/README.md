@@ -102,7 +102,7 @@ Join the UK Pwnagotchi community and:
 pip3 install python-telegram-bot pytz --upgrade --break-system-packages
 
 # 2. Install plugin
-sudo wget https://YOUR_REPO/TelePwn/telepwn.py -O /usr/local/share/pwnagotchi/custom-plugins/telepwn.py
+sudo wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/TelePwn/telepwn.py -O /usr/local/share/pwnagotchi/custom-plugins/telepwn.py
 
 # 3. Configure (edit config.toml)
 sudo nano /etc/pwnagotchi/config.toml
