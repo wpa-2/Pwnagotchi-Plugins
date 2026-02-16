@@ -14,7 +14,8 @@ The plugin provides on-screen status updates for the Tailscale connection and sy
 7.  [Step 6: Enable Handshake Sync (SSH Key Setup)](#step-6-enable-handshake-sync-ssh-key-setup)
 8.  [Step 7: Final Restart and Verification](#step-7-final-restart-and-verification)
 9.  [Status Indicators](#status-indicators)
-10. [Troubleshooting](#troubleshooting)
+10. [Web UI Statistics](#web-ui-statistics)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -109,6 +110,8 @@ ssh_port = 22 # SSH port on your server (change if using non-standard port like 
 * **DNS:** The plugin automatically disables Tailscale DNS (`--accept-dns=false`) to prevent conflicts with Pwnagotchi's network setup
 * **Trailing Slash:** The `source_handshake_path` **must** end with a `/` for rsync to work correctly
 * **Sync Interval:** Value is in seconds. 600 = 10 minutes, 300 = 5 minutes, etc.
+* **Quiet Logging:** The plugin only logs to syslog when files are transferred or errors occur (v1.0.4+)
+* **Web UI:** View detailed sync statistics at `http://YOUR_IP:8080/plugins/tailscale` (v1.0.5+)
 
 ---
 
@@ -175,11 +178,32 @@ The plugin displays a status indicator on the Pwnagotchi screen with the label `
 | `Conn...` | Attempting to connect to Tailscale |
 | `Up` | Successfully connected to Tailscale network |
 | `Sync...` | Currently syncing handshakes to server |
-| `Sync:X` | Successfully synced X new files (displayed briefly) |
-| `Sync:99+` | Successfully synced 99+ files (displayed briefly) |
-| `SyncErr` | Handshake sync failed (check logs) |
+| `Sync:X` | Successfully synced X new files (displays for 15 seconds) |
+| `Sync:99+` | Successfully synced 99+ files (displays for 15 seconds) |
+| `SyncErr` | Handshake sync failed (displays for 15 seconds, check logs) |
 | `Error` | Connection attempt failed (retrying) |
 | `Failed` | Connection failed after all retries |
+
+**Note:** Temporary statuses (`Sync:X`, `Sync:99+`, `SyncErr`) display for 15 seconds before reverting to the normal status.
+
+---
+
+### Web UI Statistics
+
+The plugin provides a detailed statistics page accessible via the Pwnagotchi web interface.
+
+**Access the stats page:**
+- Navigate to `http://YOUR_PWNAGOTCHI_IP:8080/plugins/tailscale`
+- Or click on the Tailscale plugin from the main plugins page at `http://YOUR_PWNAGOTCHI_IP:8080/plugins`
+
+**Statistics displayed:**
+- **Today's Synced Handshakes**: Number of handshakes synced since midnight
+- **Total Synced (This Session)**: Total handshakes synced since plugin loaded
+- **Connection Status**: Current Tailscale connection state, hostname, and IP
+- **Sync Information**: Last sync time, file count, next sync countdown, sync interval
+- **Server Configuration**: Server IP, SSH port, remote path
+
+The stats page updates in real-time and provides a convenient overview of the plugin's activity without cluttering the e-ink display.
 
 ---
 
@@ -230,7 +254,7 @@ The plugin displays a status indicator on the Pwnagotchi screen with the label `
 
 #### Plugin loops on "Conn..." (v1.0.0 only)
 * This was a bug in v1.0.0 where the plugin incorrectly validated Tailscale connection status
-* **Solution:** Update to v1.0.3 or later
+* **Solution:** Update to v1.0.5 or later
 * The fix changed validation from looking for "Logged in as" to checking exit codes
 
 #### DNS/Network Issues - Can't Resolve Hostnames
