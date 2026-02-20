@@ -14,7 +14,7 @@ import json
 
 class git_backup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.0.0'
+    __version__ = '2.1.0'
     __license__ = 'GPL3'
     __description__ = 'Simple Git backup for Pwnagotchi - mirrors files to GitHub with auto-restore script'
 
@@ -79,7 +79,7 @@ class git_backup(plugins.Plugin):
 
         # Load options with defaults
         self.github_repo = self.options['github_repo']
-        self.interval = self.options.get('interval', 4) * 3600  # hours -> seconds
+        self.interval = self.options.get('interval', 2) * 3600  # hours -> seconds (default 2 hours)
         self.extra_files = self.options.get('extra_files', [])
         self.ssh_key = self.options.get('ssh_key', '/home/pi/.ssh/id_rsa')
 
@@ -90,7 +90,7 @@ class git_backup(plugins.Plugin):
             return
 
         self.ready = True
-        logging.info(f"[git-backup] Ready - interval: {self.options.get('interval', 4)}h, repo: {self.github_repo}")
+        logging.info(f"[git-backup] Ready - interval: {self.options.get('interval', 2)}h, repo: {self.github_repo}")
 
     def on_ui_setup(self, ui):
         with ui._lock:
@@ -482,28 +482,231 @@ sudo cp -r etc/pwnagotchi /etc/
             self.ui_status = "ERR"
             logging.error(f"[git-backup] Backup failed: {e}")
 
+    def _time_ago(self, dt):
+        """Convert datetime to human readable time ago string"""
+        now = datetime.now()
+        diff = now - dt
+        
+        seconds = diff.total_seconds()
+        
+        if seconds < 60:
+            return 'just now'
+        elif seconds < 3600:
+            mins = int(seconds // 60)
+            return f'{mins} minute{"s" if mins != 1 else ""} ago'
+        elif seconds < 86400:
+            hours = int(seconds // 3600)
+            return f'{hours} hour{"s" if hours != 1 else ""} ago'
+        elif seconds < 604800:
+            days = int(seconds // 86400)
+            return f'{days} day{"s" if days != 1 else ""} ago'
+        else:
+            weeks = int(seconds // 604800)
+            return f'{weeks} week{"s" if weeks != 1 else ""} ago'
+
     def on_webhook(self, path, request):
         """Allow manual backup trigger via webhook"""
         status = self._load_status()
-        last = status.get('last_backup', 'Never')
+        last_raw = status.get('last_backup', None)
         
-        # Trigger backup via ?backup=1
+        # Format the timestamp nicely
+        if last_raw:
+            try:
+                last_dt = datetime.fromisoformat(last_raw)
+                last = last_dt.strftime('%d %b %Y at %H:%M')
+                time_ago = self._time_ago(last_dt)
+            except:
+                last = 'Unknown'
+                time_ago = ''
+        else:
+            last = 'Never'
+            time_ago = ''
+        
+        # Check if backup was just triggered
+        message = ''
         if request.args.get('backup') == '1':
             if self.ready:
                 self._perform_backup()
                 status = self._load_status()
-                last = status.get('last_backup', 'Never')
-                return f'''<html><body>
-                    <h1>Git Backup</h1>
-                    <p style="color:green">✓ Backup triggered!</p>
-                    <p>Last backup: {last}</p>
-                    <p><a href="?backup=1">Backup Now</a></p>
-                </body></html>'''
+                last_raw = status.get('last_backup', None)
+                if last_raw:
+                    try:
+                        last_dt = datetime.fromisoformat(last_raw)
+                        last = last_dt.strftime('%d %b %Y at %H:%M')
+                        time_ago = 'just now'
+                    except:
+                        pass
+                message = '<div class="success">✓ Backup complete!</div>'
             else:
-                return "<html><body><h1>Plugin not ready</h1><p>Check logs</p></body></html>"
+                message = '<div class="error">✗ Plugin not ready - check logs</div>'
         
-        return f'''<html><body>
+        html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>Git Backup</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #fff;
+        }}
+        .container {{
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .header h1 {{
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }}
+        .header .icon {{
+            font-size: 48px;
+            margin-bottom: 15px;
+        }}
+        .status-card {{
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            text-align: center;
+        }}
+        .status-label {{
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 8px;
+        }}
+        .status-value {{
+            font-size: 20px;
+            font-weight: 500;
+        }}
+        .status-ago {{
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 5px;
+        }}
+        .backup-btn {{
+            display: block;
+            width: 100%;
+            padding: 16px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: none;
+            cursor: pointer;
+        }}
+        .backup-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }}
+        .backup-btn:active {{
+            transform: translateY(0);
+        }}
+        .backup-btn.loading {{
+            pointer-events: none;
+            opacity: 0.8;
+        }}
+        .spinner {{
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }}
+        @keyframes spin {{
+            to {{ transform: rotate(360deg); }}
+        }}
+        .success {{
+            background: rgba(46, 213, 115, 0.15);
+            border: 1px solid rgba(46, 213, 115, 0.3);
+            color: #2ed573;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }}
+        .error {{
+            background: rgba(255, 71, 87, 0.15);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            color: #ff4757;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }}
+        .footer {{
+            text-align: center;
+            margin-top: 25px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.3);
+        }}
+        .footer a {{
+            color: rgba(255, 255, 255, 0.4);
+            text-decoration: none;
+            transition: color 0.2s;
+        }}
+        .footer a:hover {{
+            color: rgba(255, 255, 255, 0.7);
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">📦</div>
             <h1>Git Backup</h1>
-            <p>Last backup: {last}</p>
-            <p><a href="?backup=1">Backup Now</a></p>
-        </body></html>'''
+        </div>
+        {message}
+        <div class="status-card">
+            <div class="status-label">Last Backup</div>
+            <div class="status-value">{last}</div>
+            <div class="status-ago">{time_ago}</div>
+        </div>
+        <a href="?backup=1" class="backup-btn" id="backupBtn" onclick="startBackup(event)">Backup Now</a>
+        <div class="footer">
+            <a href="https://github.com/wpa-2/pwnagotchi-plugins" target="_blank">Pwnagotchi Git Backup v2.1.0</a>
+        </div>
+    </div>
+    <script>
+        function startBackup(e) {{
+            var btn = document.getElementById('backupBtn');
+            btn.classList.add('loading');
+            btn.innerHTML = '<span class="spinner"></span>Backing up...';
+        }}
+    </script>
+</body>
+</html>'''
+        return html
