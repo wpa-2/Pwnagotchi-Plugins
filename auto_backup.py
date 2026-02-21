@@ -11,7 +11,7 @@ from flask import render_template_string
 
 class AutoBackup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.3'
+    __version__ = '2.2'
     __license__ = 'GPL3'
     __description__ = 'Backs up Pwnagotchi configuration and data, keeping recent backups.'
 
@@ -35,7 +35,6 @@ class AutoBackup(plugins.Plugin):
     
     DEFAULT_INTERVAL_SECONDS = 60 * 60  # 60 minutes
     DEFAULT_MAX_BACKUPS = 3
-    DEFAULT_COMMANDS = ["tar", "czf"]
     DEFAULT_EXCLUDE = [
         "/etc/pwnagotchi/logs/*",
         "*.bak",
@@ -61,26 +60,22 @@ class AutoBackup(plugins.Plugin):
 
         self.hostname = socket.gethostname()
         
-        # Read config with internal defaults — never touch self.options to prevent
-        # Pwnagotchi's config manager from leaking defaults into config.toml
-        self.files = self.options['files'] if 'files' in self.options else self.DEFAULT_FILES
-        self.interval_seconds = self.options['interval_seconds'] if 'interval_seconds' in self.options else self.DEFAULT_INTERVAL_SECONDS
-        self.max_backups = self.options['max_backups_to_keep'] if 'max_backups_to_keep' in self.options else self.DEFAULT_MAX_BACKUPS
-        self.exclude = self.options['exclude'] if 'exclude' in self.options else self.DEFAULT_EXCLUDE
-        self.include = self.options['include'] if 'include' in self.options else []
+        # Read config with internal defaults - DO NOT modify self.options
+        self.files = self.options.get('files', self.DEFAULT_FILES)
+        self.interval_seconds = self.options.get('interval_seconds', self.DEFAULT_INTERVAL_SECONDS)
+        self.max_backups = self.options.get('max_backups_to_keep', self.DEFAULT_MAX_BACKUPS)
+        self.exclude = self.options.get('exclude', self.DEFAULT_EXCLUDE)
+        self.include = self.options.get('include', [])
         
-        # Handle commands: detect old format, use correct default internally
-        if 'commands' in self.options:
-            commands = self.options['commands']
-            if isinstance(commands, str) or (isinstance(commands, list) and len(commands) == 1 and isinstance(commands[0], str) and '{' in str(commands)):
-                logging.warning("AUTO-BACKUP: Old command format detected in config, using default: tar czf")
-                self.commands = list(self.DEFAULT_COMMANDS)
-            elif not commands:
-                self.commands = list(self.DEFAULT_COMMANDS)
-            else:
-                self.commands = commands
+        # Handle commands: if old format, use correct default internally
+        commands = self.options.get('commands', ["tar", "czf"])
+        if isinstance(commands, str) or (isinstance(commands, list) and len(commands) == 1 and isinstance(commands[0], str) and '{' in str(commands)):
+            logging.warning("AUTO-BACKUP: Old command format detected in config, using default: tar czf")
+            self.commands = ["tar", "czf"]
+        elif not commands:
+            self.commands = ["tar", "czf"]
         else:
-            self.commands = list(self.DEFAULT_COMMANDS)
+            self.commands = commands
         
         # Validate include paths if specified
         if self.include:
@@ -93,7 +88,7 @@ class AutoBackup(plugins.Plugin):
             
         self.ready = True
         include_msg = f", includes: {len(self.include)} additional path(s)" if self.include else ""
-        logging.info(f"AUTO-BACKUP: Plugin loaded for host '{self.hostname}'. Interval: {self.interval_seconds // 60}min, Backups kept: {self.max_backups}{include_msg}")
+        logging.info(f"AUTO-BACKUP: Plugin loaded for host '{self.hostname}'. Interval: 60min, Backups kept: {self.max_backups}{include_msg}")
 
     def is_backup_due(self):
         """Check if backup is due based on interval."""
@@ -180,7 +175,7 @@ class AutoBackup(plugins.Plugin):
                 command_list,
                 shell=False,
                 stdin=None,
-                stdout=subprocess.DEVNULL,
+                stdout=open("/dev/null", "w"),
                 stderr=subprocess.PIPE
             )
             _, stderr_output = process.communicate()
@@ -231,7 +226,7 @@ class AutoBackup(plugins.Plugin):
         
         logging.info("AUTO-BACKUP: Periodic backup scheduler started")
     
-    def on_webhook(self, path, request):
+    def on_webhook(self, path, request, **kwargs):
         """Handle web UI requests."""
         if request.method == "GET":
             if path == "/" or not path:
