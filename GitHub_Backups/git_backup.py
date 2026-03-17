@@ -95,8 +95,7 @@ class git_backup(plugins.Plugin):
     def on_ui_setup(self, ui):
         if self.show_status:
             pos = self.options.get('position', (ui.width() - 35, 0))
-            self.options['position'] = pos
-            logging.info(f"[git-backup] positon: {pos}")
+            logging.info(f"[git-backup] position: {pos}")
 
             with ui._lock:
                 ui.add_element('git_backup', LabeledValue(
