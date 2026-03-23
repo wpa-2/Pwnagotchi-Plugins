@@ -13,7 +13,7 @@ import json
 
 class git_backup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.1.0.1'
+    __version__ = '2.1.1'
     __license__ = 'GPL3'
     __description__ = 'Simple Git backup for Pwnagotchi - mirrors files to GitHub with auto-restore script'
 
