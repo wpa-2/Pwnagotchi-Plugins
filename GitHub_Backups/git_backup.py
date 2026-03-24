@@ -716,7 +716,7 @@ sudo cp -r etc/pwnagotchi /etc/
         <a href="?backup=1" class="backup-btn" id="backupBtn" onclick="startBackup(event)">Backup Now</a>
         <div class="footer">
             <a href="/plugins" class="plugin-btn" id="pluginBtn">Plugins</a>
-            <a href="https://github.com/wpa-2/pwnagotchi-plugins" target="_blank">Pwnagotchi Git Backup v2.1.0.1</a>
+            <a href="https://github.com/wpa-2/pwnagotchi-plugins" target="_blank">Pwnagotchi Git Backup v2.1.1</a>
         </div>
     </div>
     <script>
