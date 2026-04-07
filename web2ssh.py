@@ -6,9 +6,10 @@ from functools import wraps
 
 class web2ssh(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '0.1.0'
+    __version__ = '0.1.1'
     __license__ = 'GPL3'
     __description__ = 'A Plugin to issue SSH commands via a browser'
+    __gitHub__ = "https://github.com/wpa-2/Pwnagotchi-Plugins/blob/main/web2ssh.py"
 
     def __init__(self, config=None):
         super().__init__()
@@ -34,6 +35,12 @@ class web2ssh(plugins.Plugin):
         self.app.before_request(self.requires_auth)  # Attach auth check to all routes
         self._register_routes()
         self.app.run(host='::', port=self.options["port"])
+
+    def on_webhook(self, path, request):
+        # open the url for 8082
+        """Handle webhook requests by redirecting to the web2ssh interface."""
+        from flask import redirect
+        return redirect(f"http://{request.host.split(':')[0]}:{self.options['port']}/", code=302)
 
     def _register_routes(self):
         """Register Flask routes."""
@@ -131,7 +138,11 @@ class web2ssh(plugins.Plugin):
                             </form>
                             <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="ping -c 4 8.8.8.8">
-                                <button type="submit">Ping</button>
+                                <button type="submit">Ping IP</button>
+                            </form>
+                            <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="ping -c 4 google.com">
+                                <button type="submit">Ping DNS</button>
                             </form>
                             <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="sudo pwngrid --inbox">
@@ -144,6 +155,15 @@ class web2ssh(plugins.Plugin):
                             <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="ls /usr/local/share/pwnagotchi/custom-plugins">
                                 <button type="submit">Plugins</button>
+                            </form>
+                                <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="systemctl status pwnagotchi --no-pager">
+                                <button type="submit">Status</button>
+                            </form>
+                            </form>
+                                <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="cat /etc/pwnagotchi/config.toml">
+                                <button type="submit">View Config</button>
                             </form>
                         </div>
                     </div>
