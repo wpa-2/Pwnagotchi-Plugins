@@ -33,7 +33,7 @@ You'll need: `PrivateKey`, `Address`, `PublicKey`, `PresharedKey` (if present), 
 
 Create handshake directory:
 ```bash
-mkdir -p /home/pi/handshakes/
+mkdir -p /etc/pwnagotchi/handshakes/
 ```
 
 ---
@@ -48,7 +48,7 @@ sudo apt-get install rsync wireguard wireguard-tools openresolv -y
 
 Install the plugin:
 ```bash
-sudo wget -O /usr/local/share/pwnagotchi/custom-plugins/wireguard.py https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/main/wireguard.py
+sudo wget -O /etc/pwnagotchi/custom-plugins/wireguard.py https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/main/wireguard.py
 ```
 
 Setup SSH keys:
@@ -186,7 +186,7 @@ sudo wg show
 ping -c 4 10.16.244.1  # Your server's VPN IP
 
 # Manual sync test (as root)
-sudo rsync -avz -e "ssh -p 2222 -i /root/.ssh/id_ed25519" /home/pi/handshakes/ wpa2@10.16.244.1:/home/wpa2/pwntest_handshakes/
+sudo rsync -avz -e "ssh -p 2222 -i /root/.ssh/id_ed25519" /etc/pwnagotchi/handshakes/ wpa2@10.16.244.1:/home/wpa2/pwntest_handshakes/
 ```
 
 **Custom SSH port not working:**
