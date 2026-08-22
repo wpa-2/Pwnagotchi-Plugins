@@ -50,13 +50,55 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # Constants
 CONFIG_FILE = "/etc/pwnagotchi/config.toml"
-HANDSHAKE_DIR = "/home/pi/handshakes/"
+
+# --- Config-driven path resolution -----------------------------------------
+# pwnagotchi-noai moved these locations; follow the config rather than hardcode
+# old paths. Canonical values are last-resort fallbacks only.
+CANONICAL_HANDSHAKES = "/etc/pwnagotchi/handshakes"
+CANONICAL_CUSTOM_PLUGINS = "/etc/pwnagotchi/custom-plugins/"
+
+
+def _config_value(section, key):
+    """Read section.key from the merged runtime config, falling back to a
+    direct parse of config.toml. Returns None if unavailable."""
+    try:
+        cfg = getattr(pwnagotchi, "config", None)
+        if cfg and cfg.get(section, {}).get(key):
+            return cfg[section][key]
+    except Exception:
+        pass
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = toml.load(f)
+        val = data.get(section, {}).get(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return None
+
+
+def config_handshake_dir():
+    """bettercap.handshakes from config, else canonical /etc/pwnagotchi/handshakes."""
+    return _config_value("bettercap", "handshakes") or CANONICAL_HANDSHAKES
+
+
+def config_custom_plugins_dir():
+    """main.custom_plugins from config, else canonical /etc/pwnagotchi/custom-plugins/."""
+    return _config_value("main", "custom_plugins") or CANONICAL_CUSTOM_PLUGINS
+# ---------------------------------------------------------------------------
+
+# Local handshakes directory, resolved from config (trailing slash kept for the
+# existing os.path.join / listdir call sites below).
+HANDSHAKE_DIR = config_handshake_dir().rstrip("/") + "/"
 MAX_MESSAGE_LENGTH = 4096 // 2
 LOG_PATH = "/etc/pwnagotchi/log/pwnagotchi.log"
 COOLDOWN_SECONDS = 2
+# Custom plugins from config; built-in defaults derived from the installed
+# package so it doesn't depend on a specific venv/python version.
 PLUGIN_DIRS = [
-    "/usr/local/share/pwnagotchi/custom-plugins/",
-    "/home/pi/.pwn/lib/python3.13/site-packages/pwnagotchi/plugins/default/"
+    config_custom_plugins_dir(),
+    os.path.join(os.path.dirname(plugins.__file__), "default"),
 ]
 
 SHARE_COOLDOWN = 300
@@ -98,7 +140,7 @@ MAIN_MENU = [
 
 class TelePwn(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = "2.0.0"
+    __version__ = "2.0.1"
     __license__ = "GPL3"
     __description__ = "Telegram interface for Pwnagotchi - Python 3.13 compatible"
     __dependencies__ = ("python-telegram-bot>=20.0", "requests>=2.28.0", "psutil>=5.9.0", "schedule>=1.2.0", "toml>=0.10.0", "pytz")
@@ -463,7 +505,7 @@ class TelePwn(plugins.Plugin):
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"/home/pi/telepwn_backup_{timestamp}.tar.gz"
-            subprocess.run(["sudo", "tar", "czf", backup_path, "/etc/pwnagotchi/", "/home/pi/handshakes/"], check=True)
+            subprocess.run(["sudo", "tar", "czf", backup_path, "/etc/pwnagotchi/", HANDSHAKE_DIR], check=True)
             if self.bot_loop:
                 asyncio.run_coroutine_threadsafe(
                     self.application.bot.send_document(
@@ -781,7 +823,7 @@ class TelePwn(plugins.Plugin):
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"/home/pi/telepwn_backup_{timestamp}.tar.gz"
-            subprocess.run(["sudo", "tar", "czf", backup_path, "/etc/pwnagotchi/", "/home/pi/handshakes/"], check=True)
+            subprocess.run(["sudo", "tar", "czf", backup_path, "/etc/pwnagotchi/", HANDSHAKE_DIR], check=True)
             
             with open(backup_path, "rb") as backup:
                 await context.bot.send_document(chat_id=update.effective_chat.id, document=backup)
