@@ -6,7 +6,7 @@ from functools import wraps
 
 class web2ssh(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '0.1.0'
+    __version__ = '0.1.1'
     __license__ = 'GPL3'
     __description__ = 'A Plugin to issue SSH commands via a browser'
 
@@ -142,7 +142,7 @@ class web2ssh(plugins.Plugin):
                                 <button type="submit">Pwnkill</button>
                             </form>
                             <form action="/execute" method="post" style="display: inline;">
-                                <input type="hidden" name="command" value="ls /usr/local/share/pwnagotchi/custom-plugins">
+                                <input type="hidden" name="command" value="ls /etc/pwnagotchi/custom-plugins">
                                 <button type="submit">Plugins</button>
                             </form>
                         </div>
