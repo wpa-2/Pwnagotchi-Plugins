@@ -20,14 +20,14 @@ Backups run every 60 minutes, keep the 3 most recent, and skip logs/temp files a
 ```toml
 [main.plugins.auto_backup]
 enabled = true
-backup_location = "/home/pi/backups"
+backup_location = "/etc/pwnagotchi/backups"
 ```
 
 **Add custom directories:**
 ```toml
 [main.plugins.auto_backup]
 enabled = true
-backup_location = "/home/pi/backups"
+backup_location = "/etc/pwnagotchi/backups"
 include = ["/home/pi/my_custom_data"]
 ```
 
@@ -35,7 +35,7 @@ include = ["/home/pi/my_custom_data"]
 ```toml
 [main.plugins.auto_backup]
 enabled = true
-backup_location = "/home/pi/backups"
+backup_location = "/etc/pwnagotchi/backups"
 include = [
   "/home/pi/my_custom_data",
   "/opt/important_app",
@@ -46,7 +46,7 @@ include = [
 ## Installation
 
 ```bash
-sudo wget -O /usr/local/share/pwnagotchi/custom-plugins/auto_backup.py / 
+sudo wget -O /etc/pwnagotchi/custom-plugins/auto_backup.py / 
 https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/auto_backup.py
 ```
 
