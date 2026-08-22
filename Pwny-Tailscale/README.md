@@ -74,7 +74,7 @@ The plugin will use an auth key to add your Pwnagotchi to your Tailnet automatic
 
 1.  Download the plugin directly to the Pwnagotchi's custom plugins directory:
     ```bash
-    sudo wget -O /usr/local/share/pwnagotchi/custom-plugins/tailscale.py https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/tailscale.py
+    sudo wget -O /etc/pwnagotchi/custom-plugins/tailscale.py https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/tailscale.py
     ```
 
 ---
@@ -98,7 +98,7 @@ handshake_dir = "/path/to/remote/handshakes/" # Destination folder on your serve
 # Optional settings (defaults shown):
 hostname = "pwnagotchi" # Custom device name in Tailnet
 sync_interval_secs = 600 # How often to sync handshakes (10 minutes)
-source_handshake_path = "/home/pi/handshakes/" # Local handshake directory (NOTE: trailing slash required)
+source_handshake_path = "/etc/pwnagotchi/handshakes/" # Local handshake directory (NOTE: trailing slash required)
 ssh_port = 22 # SSH port on your server (change if using non-standard port like 2222)
 ```
 
@@ -213,7 +213,7 @@ The stats page updates in real-time and provides a convenient overview of the pl
 * Check the Pwnagotchi logs: `sudo journalctl -u pwnagotchi -f | grep Tailscale`
 * Look for errors about missing config options
 * Verify `rsync` and `tailscale` are installed: `which rsync` and `which tailscale`
-* Ensure the plugin file has correct permissions: `sudo chmod 644 /usr/local/share/pwnagotchi/custom-plugins/tailscale.py`
+* Ensure the plugin file has correct permissions: `sudo chmod 644 /etc/pwnagotchi/custom-plugins/tailscale.py`
 
 #### Connection Fails or Status shows "Failed"
 * Verify your `auth_key` is correct and has not expired
@@ -225,11 +225,11 @@ The stats page updates in real-time and provides a convenient overview of the pl
 #### Sync Fails or Status shows "SyncErr"
 * **Test rsync manually** with the dedicated key:
   ```bash
-  sudo rsync -avz -e "ssh -i /root/.ssh/id_rsa_tailscale" /home/pi/handshakes/ your-server-user@100.X.X.X:/path/to/remote/handshakes/
+  sudo rsync -avz -e "ssh -i /root/.ssh/id_rsa_tailscale" /etc/pwnagotchi/handshakes/ your-server-user@100.X.X.X:/path/to/remote/handshakes/
   ```
   If using custom SSH port (e.g., 2222):
   ```bash
-  sudo rsync -avz -e "ssh -p 2222 -i /root/.ssh/id_rsa_tailscale" /home/pi/handshakes/ your-server-user@100.X.X.X:/path/to/remote/handshakes/
+  sudo rsync -avz -e "ssh -p 2222 -i /root/.ssh/id_rsa_tailscale" /etc/pwnagotchi/handshakes/ your-server-user@100.X.X.X:/path/to/remote/handshakes/
   ```
 * **Common issues:**
   * SSH key not properly configured (see Step 6)
@@ -281,7 +281,7 @@ Tailscale has strict hostname requirements (DNS label format):
 * **Check logs:** `sudo journalctl -u pwnagotchi | grep Tailscale` to see hostname warnings
 
 #### Handshakes not appearing on server
-* Verify the Pwnagotchi is actually capturing handshakes: `ls -la /home/pi/handshakes/`
+* Verify the Pwnagotchi is actually capturing handshakes: `ls -la /etc/pwnagotchi/handshakes/`
 * Check that the destination directory exists on the server
 * Verify you've waited at least one sync interval (default 10 minutes)
 * Check the logs for sync activity: `sudo journalctl -u pwnagotchi | grep "Sync complete"`
