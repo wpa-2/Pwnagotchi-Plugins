@@ -3,17 +3,51 @@ import os
 import subprocess
 import time
 import threading
+import toml
 from typing import Optional
 
+import pwnagotchi
 import pwnagotchi.plugins as plugins
 import pwnagotchi.ui.fonts as fonts
 from pwnagotchi.ui.components import LabeledValue
 from pwnagotchi.ui.view import BLACK
 
+# --- Config-driven path resolution -----------------------------------------
+# pwnagotchi-noai moved these locations; follow the config rather than hardcode
+# old paths. Canonical values are last-resort fallbacks only.
+CANONICAL_HANDSHAKES = "/etc/pwnagotchi/handshakes"
+CONFIG_FILE = "/etc/pwnagotchi/config.toml"
+
+
+def _config_value(section, key):
+    """Read section.key from the merged runtime config, falling back to a
+    direct parse of config.toml. Returns None if unavailable."""
+    try:
+        cfg = getattr(pwnagotchi, "config", None)
+        if cfg and cfg.get(section, {}).get(key):
+            return cfg[section][key]
+    except Exception:
+        pass
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = toml.load(f)
+        val = data.get(section, {}).get(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return None
+
+
+def config_handshake_dir():
+    """bettercap.handshakes from config, else canonical /etc/pwnagotchi/handshakes."""
+    return _config_value("bettercap", "handshakes") or CANONICAL_HANDSHAKES
+# ---------------------------------------------------------------------------
+
 
 class WireGuard(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.2'
+    __version__ = '2.3'
     __license__ = 'GPL3'
     __description__ = 'VPN Sync: Full backup on first run, then incremental only. (Enhanced Edition - Fixed)'
 
@@ -446,8 +480,14 @@ PersistentKeepalive = {self.options['persistent_keepalive']}
             return False, 0
 
     def _get_source_directory(self) -> Optional[str]:
-        """Find handshake source directory."""
+        """Find handshake source directory.
+
+        The config-set location (bettercap.handshakes, canonical
+        /etc/pwnagotchi/handshakes) is checked first; the legacy paths remain
+        as fallbacks for older installs.
+        """
         possible_dirs = [
+            config_handshake_dir(),
             '/home/pi/handshakes/',
             '/root/handshakes/',
             '/home/pi/handshakes',  # without trailing slash
