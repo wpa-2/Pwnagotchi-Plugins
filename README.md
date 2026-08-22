@@ -9,7 +9,7 @@ A curated collection of powerful plugins designed to enhance your Pwnagotchi exp
 ## 🔌 Universal Installation
 
 1.  **Download:** Click on the `.py` file you want (e.g., `wireguard.py`, `discord.py`) from the file list above.
-2.  **Install:** Move the file to your Pwnagotchi's custom plugin directory: `/usr/local/share/pwnagotchi/custom-plugins/`.
+2.  **Install:** Move the file to your Pwnagotchi's custom plugin directory: `/etc/pwnagotchi/custom-plugins/`.
 3.  **Configure:** Edit your `/etc/pwnagotchi/config.toml` file to include the settings listed below.
 4.  **Activate:** Restart your Pwnagotchi:
     `sudo systemctl restart pwnagotchi`
@@ -40,7 +40,7 @@ The **AutoBackup** plugin automatically creates compressed `.tar.gz` backups of 
 ### ⚙️ Configuration Example:
     [main.plugins.auto_backup]
     enabled = true
-    backup_location = "/home/pi/backups"
+    backup_location = "/etc/pwnagotchi/backups"
 
 ---
 
