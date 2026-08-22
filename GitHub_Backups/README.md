@@ -19,8 +19,8 @@ Simple, reliable backup of your Pwnagotchi to GitHub. Files are mirrored in thei
 | Path | Contents |
 |------|----------|
 | `/etc/pwnagotchi/` | Main config and plugin configs |
-| `/usr/local/share/pwnagotchi/custom-plugins` | Your custom plugins |
-| `/home/pi/handshakes` | Captured handshakes |
+| `/etc/pwnagotchi/custom-plugins` | Your custom plugins |
+| `/etc/pwnagotchi/handshakes` | Captured handshakes |
 | `/root/peers` | Peer data |
 | `/root/.api-report.json` | API reporting data |
 | `/home/pi/.wpa_sec_uploads` | WPA-sec upload tracking |
@@ -92,7 +92,7 @@ Copy the SSH URL: `git@github.com:YOUR_USERNAME/pwnagotchi-backup.git`
 ### Step 5: Install Plugin
 
 ```bash
-sudo wget -O /usr/local/share/pwnagotchi/custom-plugins/git_backup.py \
+sudo wget -O /etc/pwnagotchi/custom-plugins/git_backup.py \
   https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/GitHub_Backups/git_backup.py
 ```
 
@@ -234,13 +234,13 @@ git clone git@github.com:YOUR_USERNAME/YOUR_REPO.git pwnagotchi-restore
 cd pwnagotchi-restore
 
 # Restore just handshakes
-sudo cp -r home/pi/handshakes/* /home/pi/handshakes/
+sudo cp -r home/pi/handshakes/* /etc/pwnagotchi/handshakes/
 
 # Restore just config
 sudo cp -r etc/pwnagotchi/* /etc/pwnagotchi/
 
 # Restore just custom plugins
-sudo cp -r usr/local/share/pwnagotchi/custom-plugins/* /usr/local/share/pwnagotchi/custom-plugins/
+sudo cp -r usr/local/share/pwnagotchi/custom-plugins/* /etc/pwnagotchi/custom-plugins/
 
 # Restore SSH keys (fix permissions after!)
 sudo cp -r root/.ssh/* /root/.ssh/
@@ -372,7 +372,7 @@ The plugin checks file modification time and size before copying. Only changed f
 
 ```bash
 # Remove plugin
-sudo rm /usr/local/share/pwnagotchi/custom-plugins/git_backup.py
+sudo rm /etc/pwnagotchi/custom-plugins/git_backup.py
 
 # Remove local repo (optional)
 sudo rm -rf /home/pi/git-backup-repo
