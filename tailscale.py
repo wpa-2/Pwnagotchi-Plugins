@@ -4,14 +4,49 @@ import subprocess
 import time
 from datetime import date
 
+import toml
+import pwnagotchi
 import pwnagotchi.plugins as plugins
 import pwnagotchi.ui.fonts as fonts
 from pwnagotchi.ui.components import LabeledValue
 from pwnagotchi.ui.view import BLACK
 
+# --- Config-driven path resolution -----------------------------------------
+# pwnagotchi-noai moved these locations; follow the config rather than hardcode
+# old paths. Canonical values are last-resort fallbacks only.
+CANONICAL_HANDSHAKES = "/etc/pwnagotchi/handshakes"
+CONFIG_FILE = "/etc/pwnagotchi/config.toml"
+
+
+def _config_value(section, key):
+    """Read section.key from the merged runtime config, falling back to a
+    direct parse of config.toml. Returns None if unavailable."""
+    try:
+        cfg = getattr(pwnagotchi, "config", None)
+        if cfg and cfg.get(section, {}).get(key):
+            return cfg[section][key]
+    except Exception:
+        pass
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = toml.load(f)
+        val = data.get(section, {}).get(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return None
+
+
+def config_handshake_dir():
+    """bettercap.handshakes from config, else canonical /etc/pwnagotchi/handshakes."""
+    return _config_value("bettercap", "handshakes") or CANONICAL_HANDSHAKES
+# ---------------------------------------------------------------------------
+
+
 class Tailscale(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '1.0.5'
+    __version__ = '1.0.6'
     __license__ = 'GPL3'
     __description__ = 'A configurable plugin to connect to a Tailscale network and sync handshakes.'
 
@@ -30,10 +65,17 @@ class Tailscale(plugins.Plugin):
 
     def on_loaded(self):
         logging.info("[Tailscale] Plugin loaded.")
-        
+
+        # Track whether the user pinned their own source path. If they did, we
+        # never override it; if they didn't, we follow the config-set location.
+        self._source_is_user_set = 'source_handshake_path' in self.options
+
         # Set default options if they're not in config.toml
         self.options.setdefault('sync_interval_secs', 600)
-        self.options.setdefault('source_handshake_path', '/home/pi/handshakes/')
+        # Local handshakes now come from bettercap.handshakes in the config
+        # (canonical /etc/pwnagotchi/handshakes) rather than a hardcoded path.
+        self.options.setdefault('source_handshake_path',
+                                config_handshake_dir().rstrip('/') + '/')
         self.options.setdefault('hostname', 'pwnagotchi')
         self.options.setdefault('ssh_port', 22)
 
@@ -58,6 +100,21 @@ class Tailscale(plugins.Plugin):
             
         self.ready = True
         self.last_sync_time = 0
+
+    def on_config_changed(self, config):
+        # Keep the local source in step with bettercap.handshakes unless the
+        # user has explicitly pinned their own source_handshake_path.
+        if getattr(self, '_source_is_user_set', False):
+            return
+        try:
+            hs = (config or {}).get("bettercap", {}).get("handshakes")
+        except Exception:
+            hs = None
+        if hs:
+            resolved = hs.rstrip('/') + '/'
+            if self.options.get('source_handshake_path') != resolved:
+                self.options['source_handshake_path'] = resolved
+                logging.info("[Tailscale] Handshake source set from config: %s", resolved)
 
     def on_ui_setup(self, ui):
         self.ui = ui
