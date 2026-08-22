@@ -1,3 +1,4 @@
+import pwnagotchi
 import pwnagotchi.plugins as plugins
 import pwnagotchi.ui.fonts as fonts
 from pwnagotchi.ui.components import LabeledValue
@@ -10,18 +11,59 @@ from datetime import datetime
 import socket
 import fnmatch
 import json
+import toml
+
+# --- Config-driven path resolution -----------------------------------------
+# pwnagotchi-noai moved these locations; plugins must follow the config rather
+# than hardcode old paths. Canonical values are last-resort fallbacks only.
+CANONICAL_HANDSHAKES = "/etc/pwnagotchi/handshakes"
+CANONICAL_CUSTOM_PLUGINS = "/etc/pwnagotchi/custom-plugins/"
+CONFIG_FILE = "/etc/pwnagotchi/config.toml"
+
+
+def _config_value(section, key):
+    """Read section.key from the merged runtime config, falling back to a
+    direct parse of config.toml. Returns None if unavailable."""
+    try:
+        cfg = getattr(pwnagotchi, "config", None)
+        if cfg and cfg.get(section, {}).get(key):
+            return cfg[section][key]
+    except Exception:
+        pass
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = toml.load(f)
+        val = data.get(section, {}).get(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return None
+
+
+def config_handshake_dir():
+    """bettercap.handshakes from config, else canonical /etc/pwnagotchi/handshakes."""
+    return _config_value("bettercap", "handshakes") or CANONICAL_HANDSHAKES
+
+
+def config_custom_plugins_dir():
+    """main.custom_plugins from config, else canonical /etc/pwnagotchi/custom-plugins/."""
+    return _config_value("main", "custom_plugins") or CANONICAL_CUSTOM_PLUGINS
+# ---------------------------------------------------------------------------
+
 
 class git_backup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.1.1'
+    __version__ = '2.2'
     __license__ = 'GPL3'
     __description__ = 'Simple Git backup for Pwnagotchi - mirrors files to GitHub with auto-restore script'
 
-    # ===== HARDCODED DEFAULTS =====
+    # ===== STATIC DEFAULTS =====
+    # custom-plugins and handshakes are resolved from config at runtime
+    # (see _default_files). The /home/pi entries below are the pi user's own
+    # home files, which are correct.
     DEFAULT_FILES = [
         "/etc/pwnagotchi/",
-        "/usr/local/share/pwnagotchi/custom-plugins",
-        "/home/pi/handshakes",
         "/root/peers",
         "/root/.api-report.json",
         "/home/pi/.wpa_sec_uploads",
@@ -32,6 +74,14 @@ class git_backup(plugins.Plugin):
         "/home/pi/.bashrc",
         "/home/pi/.profile",
     ]
+
+    def _default_files(self):
+        """DEFAULT_FILES plus the config-resolved custom-plugins and handshakes
+        directories, so backups follow wherever the running config points."""
+        return list(self.DEFAULT_FILES) + [
+            config_custom_plugins_dir().rstrip("/"),
+            config_handshake_dir().rstrip("/"),
+        ]
 
     EXCLUDES = [
         "*/logs/*",
@@ -215,7 +265,7 @@ class git_backup(plugins.Plugin):
 
     def _copy_files(self):
         """Copy backup files to repo directory, mirroring structure"""
-        all_files = self.DEFAULT_FILES + self.extra_files
+        all_files = self._default_files() + self.extra_files
         copied_count = 0
         errors = []
 
@@ -419,8 +469,8 @@ sudo cp -r etc/pwnagotchi /etc/
 ## What's Backed Up
 
 - `/etc/pwnagotchi/` - Main config
-- `/usr/local/share/pwnagotchi/custom-plugins` - Custom plugins
-- `/home/pi/handshakes` - Captured handshakes
+- `/etc/pwnagotchi/custom-plugins` - Custom plugins
+- `/etc/pwnagotchi/handshakes` - Captured handshakes
 - `/root/peers` - Peer data
 - `/root/.ssh` & `/etc/ssh` - SSH keys
 - Shell profiles
