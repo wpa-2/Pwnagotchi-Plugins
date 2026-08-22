@@ -15,15 +15,50 @@ from requests import RequestException
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+import toml
+import pwnagotchi
 import pwnagotchi.plugins as plugins
 from pwnagotchi.agent import Agent
+
+# --- Config-driven path resolution -----------------------------------------
+# pwnagotchi-noai moved these locations; follow the config rather than hardcode
+# old paths. Canonical values are last-resort fallbacks only.
+CANONICAL_HANDSHAKES = "/etc/pwnagotchi/handshakes"
+CONFIG_FILE = "/etc/pwnagotchi/config.toml"
+
+
+def _config_value(section, key):
+    """Read section.key from the merged runtime config, falling back to a
+    direct parse of config.toml. Returns None if unavailable."""
+    try:
+        cfg = getattr(pwnagotchi, "config", None)
+        if cfg and cfg.get(section, {}).get(key):
+            return cfg[section][key]
+    except Exception:
+        pass
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = toml.load(f)
+        val = data.get(section, {}).get(key)
+        if val:
+            return val
+    except Exception:
+        pass
+    return None
+
+
+def config_handshake_dir():
+    """bettercap.handshakes from config, else canonical /etc/pwnagotchi/handshakes."""
+    return _config_value("bettercap", "handshakes") or CANONICAL_HANDSHAKES
+# ---------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------
 # Constants
 # ----------------------------------------------------------------------------
 LOG_DIR = "/etc/pwnagotchi/log"
 LOG_FILE = os.path.join(LOG_DIR, "discord_plugin.log")
-CACHE_FILE = "/home/pi/handshakes/discord_wigle_cache.json"
+# Wigle cache lives alongside the handshakes, at the config-set location.
+CACHE_FILE = os.path.join(config_handshake_dir(), "discord_wigle_cache.json")
 
 # Timeouts
 DISCORD_TIMEOUT = 30
@@ -92,7 +127,7 @@ class CachedLocation:
 # ----------------------------------------------------------------------------
 class Discord(plugins.Plugin):
     __author__ = "WPA2"
-    __version__ = '3.0.1'
+    __version__ = '3.0.2'
     __license__ = 'GPL3'
     __description__ = 'Enhanced Discord integration: sends handshakes with location data and session reports'
 
