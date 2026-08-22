@@ -16,9 +16,9 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Configuration
-PLUGIN_DIR="/usr/local/share/pwnagotchi/custom-plugins"
+PLUGIN_DIR="/etc/pwnagotchi/custom-plugins"
 CONFIG_FILE="/etc/pwnagotchi/config.toml"
-PLUGIN_URL="https://raw.githubusercontent.com/YOUR_REPO/TelePwn/main/telepwn.py"  # Update this URL
+PLUGIN_URL="https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/main/TelePwn/telepwn.py"
 
 print_banner() {
     echo -e "${CYAN}"
