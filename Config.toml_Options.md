@@ -40,7 +40,7 @@ The `[main]` section sets up the core of your Pwnagotchi. Think of it as the bra
 | `mon_stop_cmd` | Command to stop monitor mode. | `/usr/bin/monstop` | `/usr/local/bin/stop_monitor.sh` |
 | `no_restart` | Set to `true` to prevent Pwnagotchi from automatically restarting on errors. | `false` | `no_restart = true` |
 | `whitelist` | List of SSIDs or BSSIDs (MAC addresses) to ignore. | `[]` | `whitelist = ["MyHomeWiFi", "00:11:22:33:44:55"]` |
-| `custom_plugins` | Directory for locally stored custom plugins. | `/usr/local/share/pwnagotchi/custom-plugins/` | `custom_plugins = "/home/pi/my_plugins/"` |
+| `custom_plugins` | Directory for locally stored custom plugins. | `/etc/pwnagotchi/custom-plugins/` | `custom_plugins = "/home/pi/my_plugins/"` |
 
 > 💡 **Tip:** Always `whitelist` your home and office Wi-Fi networks to prevent accidentally capturing your own handshakes!
 
@@ -151,7 +151,7 @@ The `[bettercap]` section configures Bettercap, the underlying packet sniffing t
 
 | Setting | Description | Default |
 |---|---|---|
-| `handshakes` | Directory where captured handshake `.pcap` files are stored. | `"/home/pi/handshakes"` |
+| `handshakes` | Directory where captured handshake `.pcap` files are stored. | `"/etc/pwnagotchi/handshakes"` |
 | `silence` | Bettercap events to hide from the log to reduce noise (e.g., `wifi.ap.new`, `wifi.client.probe`). | `(various)` |
 
 ---
