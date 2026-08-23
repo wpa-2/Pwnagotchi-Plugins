@@ -101,8 +101,8 @@ The `[main.log]` section controls where logs are stored and how they are rotated
 
 | Setting | Description | Default |
 |---|---|---|
-| `path` | Location for the main log file. | `"/var/log/pwnagotchi.log"` |
-| `path-debug` | Location for the more verbose debug log. | `"/tmp/pwnagotchi-debug.log"` |
+| `path` | Location for the main log file. | `"/etc/pwnagotchi/log/pwnagotchi.log"` |
+| `path-debug` | Location for the more verbose debug log. | `"/etc/pwnagotchi/log/pwnagotchi-debug.log"` |
 | `rotation` | **(Recommended)** `enabled = true` prevents logs from filling your SD card. Set a max `size` (e.g., `10M`). | `enabled = true` |
 
 ---
@@ -138,7 +138,7 @@ The `[ui]` section controls what you see on the screen and in the web browser.
 | `web.address` | Listening address. `0.0.0.0` is recommended for general access. | `::` |
 | `web.port` | Web server port. | `8080` |
 | `display.enabled` | **(Required for screens)** `true` to activate the physical display. | `false` |
-| `display.type` | The model of your e-ink screen (e.g., `waveshare_v3`, `inkyphat`). | `waveshare_v2` |
+| `display.type` | The model of your e-ink screen (e.g., `waveshare_v3`, `inkyphat`). | `waveshare_4` |
 | `display.rotation`| Screen rotation in degrees (`0`, `90`, `180`, `270`). | `180` |
 
 > 🖼️ **Display Tip**: To use a screen, you *must* set `ui.display.enabled = true` and `ui.display.type` to match your hardware. Check the official Pwnagotchi docs for a list of supported display types!
@@ -174,7 +174,7 @@ The `[fs.memory]` section helps reduce SD card wear by using RAM for temporary f
 
 - **Start Simple**: At first, only enable a few plugins like `auto-tune` and `webcfg`.
 - **Use the Web UI**: Set `ui.web.enabled = true` and visit `http://<pwnagotchi-ip>:8080` in your browser (the default IP over USB is often `10.0.0.2`).
-- **Check the Logs**: If something isn't working, check the log file at `/var/log/pwnagotchi.log` for clues.
+- **Check the Logs**: If something isn't working, check the log file at `/etc/pwnagotchi/log/pwnagotchi.log` for clues.
 - **Join the Community**: Visit the official [pwnagotchi.ai](https://pwnagotchi.ai/) website, Discord, or community forums for help and ideas.
 
 </details>
