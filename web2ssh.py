@@ -6,7 +6,7 @@ from functools import wraps
 
 class web2ssh(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '0.1.1'
+    __version__ = '0.1.2'
     __license__ = 'GPL3'
     __description__ = 'A Plugin to issue SSH commands via a browser'
 
@@ -131,7 +131,11 @@ class web2ssh(plugins.Plugin):
                             </form>
                             <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="ping -c 4 8.8.8.8">
-                                <button type="submit">Ping</button>
+                                <button type="submit">Ping IP</button>
+                            </form>
+                            <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="ping -c 4 google.com">
+                                <button type="submit">Ping DNS</button>
                             </form>
                             <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="sudo pwngrid --inbox">
@@ -144,6 +148,18 @@ class web2ssh(plugins.Plugin):
                             <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="ls /etc/pwnagotchi/custom-plugins">
                                 <button type="submit">Plugins</button>
+                            </form>
+                            <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="systemctl status pwnagotchi --no-pager">
+                                <button type="submit">Status</button>
+                            </form>
+                            <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="cat /etc/pwnagotchi/config.toml">
+                                <button type="submit">Config</button>
+                            </form>
+                            <form action="/execute" method="post" style="display: inline;">
+                                <input type="hidden" name="command" value="lsusb && iwconfig">
+                                <button type="submit">Check Wi-Fi</button>
                             </form>
                         </div>
                     </div>
