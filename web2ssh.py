@@ -36,11 +36,11 @@ class web2ssh(plugins.Plugin):
         self._register_routes()
         self.app.run(host='::', port=self.options["port"])
 
-    def on_webhook(self, path, request):
+    def on_webhook(self, path, request_obj):
         # open the url for 8082
         """Handle webhook requests by redirecting to the web2ssh interface."""
         from flask import redirect
-        return redirect(f"http://{request.host.split(':')[0]}:{self.options['port']}/", code=302)
+        return redirect(f"http://{request_obj.host.split(':')[0]}:{self.options['port']}/", code=302)
 
     def _register_routes(self):
         """Register Flask routes."""
