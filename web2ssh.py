@@ -156,12 +156,11 @@ class web2ssh(plugins.Plugin):
                                 <input type="hidden" name="command" value="ls /usr/local/share/pwnagotchi/custom-plugins">
                                 <button type="submit">Plugins</button>
                             </form>
-                                <form action="/execute" method="post" style="display: inline;">
+                            <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="systemctl status pwnagotchi --no-pager">
                                 <button type="submit">Status</button>
                             </form>
-                            </form>
-                                <form action="/execute" method="post" style="display: inline;">
+                            <form action="/execute" method="post" style="display: inline;">
                                 <input type="hidden" name="command" value="cat /etc/pwnagotchi/config.toml">
                                 <button type="submit">View Config</button>
                             </form>
