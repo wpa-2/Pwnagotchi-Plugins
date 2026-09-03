@@ -20,7 +20,6 @@ CANONICAL_HANDSHAKES = "/etc/pwnagotchi/handshakes"
 CANONICAL_CUSTOM_PLUGINS = "/etc/pwnagotchi/custom-plugins/"
 CONFIG_FILE = "/etc/pwnagotchi/config.toml"
 
-
 def _config_value(section, key):
     """Read section.key from the merged runtime config, falling back to a
     direct parse of config.toml. Returns None if unavailable."""
@@ -54,7 +53,7 @@ def config_custom_plugins_dir():
 
 class git_backup(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '2.2'
+    __version__ = '2.2.1'
     __license__ = 'GPL3'
     __description__ = 'Simple Git backup for Pwnagotchi - mirrors files to GitHub with auto-restore script'
 
@@ -90,6 +89,7 @@ class git_backup(plugins.Plugin):
         "*.tmp",
         "*.bak",
         "*.log",
+        "*.so",
     ]
 
     BACKUP_DIR = "/home/pi/git-backup-repo"
@@ -132,7 +132,7 @@ class git_backup(plugins.Plugin):
         self.extra_files = self.options.get('extra_files', [])
         self.ssh_key = self.options.get('ssh_key', '/home/pi/.ssh/id_rsa')
         self.show_status = self.options.get('show_status', True)
-       
+        self.branch = self.options.get('branch', 'main')
         # Validate SSH key exists
         if not os.path.exists(self.ssh_key):
             logging.error(f"[git-backup] SSH key not found: {self.ssh_key}")
@@ -234,7 +234,7 @@ class git_backup(plugins.Plugin):
 
             subprocess.run(['git', 'init'], cwd=self.BACKUP_DIR, check=True, capture_output=True)
             subprocess.run(['git', 'remote', 'add', 'origin', self.github_repo], cwd=self.BACKUP_DIR, check=True, capture_output=True)
-            subprocess.run(['git', 'checkout', '-b', 'main'], cwd=self.BACKUP_DIR, check=True, capture_output=True)
+            subprocess.run(['git', 'checkout', '-b', self.branch], cwd=self.BACKUP_DIR, check=True, capture_output=True)
 
             self._configure_git_user()
 
@@ -503,7 +503,7 @@ sudo cp -r etc/pwnagotchi /etc/
             self._run_git(['commit', '-m', commit_msg])
 
             # Force push (one-way backup, always overwrite remote)
-            self._run_git(['push', '--force', '-u', 'origin', 'main'])
+            self._run_git(['push', '--force', '-u', 'origin', self.branch])
 
             logging.info("[git-backup] Push successful")
             return True
@@ -765,8 +765,9 @@ sudo cp -r etc/pwnagotchi /etc/
         </div>
         <a href="?backup=1" class="backup-btn" id="backupBtn" onclick="startBackup(event)">Backup Now</a>
         <div class="footer">
+            <a href="/">Back</a>
             <a href="/plugins" class="plugin-btn" id="pluginBtn">Plugins</a>
-            <a href="https://github.com/wpa-2/pwnagotchi-plugins" target="_blank">Pwnagotchi Git Backup v2.1.0.1</a>
+            <a href="https://github.com/wpa-2/pwnagotchi-plugins" target="_blank">Pwnagotchi Git Backup v2.2.1</a>
         </div>
     </div>
     <script>
