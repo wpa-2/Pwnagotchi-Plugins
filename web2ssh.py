@@ -6,7 +6,7 @@ from functools import wraps
 
 class web2ssh(plugins.Plugin):
     __author__ = 'WPA2'
-    __version__ = '0.1.2'
+    __version__ = '0.1.3'
     __license__ = 'GPL3'
     __description__ = 'A Plugin to issue SSH commands via a browser'
 
@@ -28,7 +28,7 @@ class web2ssh(plugins.Plugin):
             "port": self.config.get("main.plugins.web2ssh.port", 8082),
         }
 
-        logging.debug(f"web2ssh config: {self.options}")
+        logging.debug("web2ssh config loaded (port %s)", self.options["port"])
 
         # Set up Flask routes and start the server
         self.app.before_request(self.requires_auth)  # Attach auth check to all routes
@@ -251,7 +251,7 @@ class web2ssh(plugins.Plugin):
         # If no function is passed (e.g., as a before_request handler), just check auth
         if f is None:
             auth = request.authorization
-            if not auth or not self.check_auth(auth.username, self.options["password"]):
+            if not auth or not self.check_auth(auth.username, auth.password):
                 return self._unauthorized_response()
             return None
 
