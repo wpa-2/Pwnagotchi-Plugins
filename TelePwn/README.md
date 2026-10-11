@@ -24,7 +24,7 @@
 ```bash
 cd /tmp
 sudo wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/TelePwn/install_telepwn.sh
-sudo bash install.sh
+sudo bash install_telepwn.sh
 ```
 
 The installer will:
