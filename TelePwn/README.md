@@ -24,7 +24,7 @@
 ```bash
 cd /tmp
 sudo wget https://raw.githubusercontent.com/wpa-2/Pwnagotchi-Plugins/refs/heads/main/TelePwn/install_telepwn.sh
-sudo bash install.sh
+sudo bash install_telepwn.sh
 ```
 
 The installer will:
@@ -116,7 +116,7 @@ sudo systemctl restart pwnagotchi
 Just run the installer - it automatically detects and removes old versions:
 
 ```bash
-sudo bash install.sh
+sudo bash install_telepwn.sh
 ```
 
 Your existing configuration is preserved!
